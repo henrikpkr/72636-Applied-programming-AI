@@ -99,3 +99,14 @@ class CandidateRepository:
         if not row:
             return None
         return CandidateProfile.model_validate_json(row[0])
+
+    def get_latest_profile(self) -> CandidateProfile | None:
+        """Most recently saved profile across every candidate — this is a single-user local
+        workspace, so "latest CV on file" is unambiguous without a candidate_id."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT profile_json FROM candidate_profiles ORDER BY created_at DESC LIMIT 1"
+            ).fetchone()
+        if not row:
+            return None
+        return CandidateProfile.model_validate_json(row[0])

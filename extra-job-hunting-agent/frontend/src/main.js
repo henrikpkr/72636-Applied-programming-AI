@@ -14,16 +14,37 @@ const state = {
   selectedRegions: [],
   selectedCountries: [],
   selectedLanguages: [],
+  currentPage: 1,
+  user: null, // { name, email } — demo login only, persisted to localStorage
+  lastMainScreen: 'upload',
 }
+
+const USER_STORAGE_KEY = 'jobhunter_user'
 
 const SENIORITY_LEVELS = ['intern', 'junior', 'mid', 'senior', 'lead', 'manager', 'director', 'executive']
 const LANGUAGE_LEVELS = ['A1', 'A2', 'B1', 'B2', 'C1', 'C2', 'Native']
 const EMPLOYMENT_TYPES = [['intern', 'Intern'], ['full_time', 'Full-time'], ['part_time', 'Part-time'], ['contract', 'Contract']]
+const ALL_SOURCES = ['arbeitnow', 'adzuna', 'jooble', 'bundesagentur', 'greenhouse', 'lever']
+const RESULTS_LIMIT = 200
+const RESULTS_PER_PAGE = 20
 
 const app = document.querySelector('#app')
 
 app.innerHTML = `
-  <div class="app-shell">
+  <div class="login-shell" id="screen-login">
+    <div class="login-card">
+      <div class="brand"><span class="brand-mark">J</span><span>jobhunter</span></div>
+      <h2>Welcome<span class="accent">.</span></h2>
+      <p class="panel-copy">Demo login — nothing is verified, this just personalizes your workspace and remembers your profile on this machine.</p>
+      <div class="field full"><label for="login-name">Name <span>required</span></label><input id="login-name" placeholder="e.g. Jordan Lee" /></div>
+      <div class="field full"><label for="login-email">Email</label><input id="login-email" type="email" placeholder="you@example.com" /></div>
+      <div class="field full"><label for="login-password">Password</label><input id="login-password" type="password" placeholder="anything works" /></div>
+      <button class="primary-button" id="login-submit">Log in <span>→</span></button>
+      <p class="profile-status" id="login-status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <div class="app-shell" id="app-shell" hidden>
     <aside class="sidebar">
       <div class="brand"><span class="brand-mark">J</span><span>jobhunter</span></div>
       <div class="side-intro">
@@ -41,8 +62,12 @@ app.innerHTML = `
 
     <main class="main-content">
       <header class="topbar">
-        <div><span class="eyebrow">SEARCH / NEW RUN</span><p class="date-line">Wednesday, September 2, 2026</p></div>
-        <button class="icon-button" id="health-button" title="Check API status" aria-label="Check API status"><span class="pulse"></span>API status</button>
+        <div><span class="eyebrow">SEARCH / NEW RUN</span><p class="date-line" id="topbar-greeting">Wednesday, September 2, 2026</p></div>
+        <div class="topbar-actions">
+          <button class="icon-button" id="profile-button" title="View your profile" aria-label="View your profile">Profile</button>
+          <button class="icon-button" id="health-button" title="Check API status" aria-label="Check API status"><span class="pulse"></span>API status</button>
+          <button class="icon-button" id="logout-button" title="Log out" aria-label="Log out">Log out</button>
+        </div>
       </header>
 
       <div id="screen-upload">
@@ -88,7 +113,6 @@ app.innerHTML = `
               <div class="field"><label for="remote-type">Remote</label><select id="remote-type"><option value="">Any</option><option value="onsite">Onsite</option><option value="hybrid">Hybrid</option><option value="remote">Remote</option></select></div>
               <div class="field"><label for="employment">Employment type</label><select id="employment"><option value="">Any employment type</option>${EMPLOYMENT_TYPES.map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></div>
               <div class="field"><label for="seniority">Seniority</label><select id="seniority"><option value="">Any seniority</option>${SENIORITY_LEVELS.map((level) => `<option value="${level}">${level[0].toUpperCase()}${level.slice(1)}</option>`).join('')}</select></div>
-              <div class="field"><label for="min-score">Min score</label><input type="number" id="min-score" min="0" max="100" placeholder="0" /></div>
             </div>
             <fieldset class="source-filter"><legend>Region</legend><div class="source-options" id="region-options"><span class="profile-hint">Loading regions...</span></div></fieldset>
             <div class="field-grid">
@@ -104,20 +128,41 @@ app.innerHTML = `
                 <div class="cm-tag-search"><input type="text" id="language-search" placeholder="Add a language..." autocomplete="off" /><div class="cm-tag-suggestions" id="language-suggestions" hidden></div></div>
               </div>
             </div>
-            <div class="limit-row"><label for="limit">Results <span>1–200</span></label><input type="number" id="limit" min="1" max="200" value="25" /></div>
-            <fieldset class="source-filter"><legend>Sources</legend><div class="source-actions"><button type="button" class="text-button" id="select-all-sources">Select all</button><button type="button" class="text-button" id="deselect-all-sources">Deselect all</button></div><div class="source-options">${[
-              ['arbeitnow', 'Arbeitnow'],
-              ['adzuna', 'Adzuna'],
-              ['jooble', 'Jooble'],
-              ['bundesagentur', 'Bundesagentur'],
-              ['greenhouse', 'Greenhouse'],
-              ['lever', 'Lever'],
-            ].map(([value, label]) => `<label><input type="checkbox" name="source" value="${value}" checked /><span>${label}</span></label>`).join('')}</div></fieldset>
             <button class="primary-button" id="run-search">Run search <span>↗</span></button>
           </div>
         </section>
 
-        <section class="results-section" id="results-section"><div class="results-header"><div><span class="section-number">03</span><h3 id="results-heading">Recommended for you</h3></div><span class="result-count" id="result-count">Waiting for your first search</span></div><div class="results-grid" id="results-grid"><div class="empty-results"><span class="empty-mark">✦</span><strong>Your shortlist will appear here.</strong><span>Run a search to see ranked roles.</span></div></div></section>
+        <section class="results-section" id="results-section"><div class="results-header"><div><span class="section-number">03</span><h3 id="results-heading">Recommended for you</h3></div><span class="result-count" id="result-count">Waiting for your first search</span></div><div class="results-grid" id="results-grid"><div class="empty-results"><span class="empty-mark">✦</span><strong>Your shortlist will appear here.</strong><span>Run a search to see ranked roles.</span></div></div><nav class="pagination" id="pagination" hidden></nav></section>
+      </div>
+
+      <div id="screen-profile" hidden>
+        <button type="button" class="back-link" id="back-from-profile">← Back</button>
+
+        <section class="welcome-row"><div><h2>Your profile<span class="accent">.</span></h2><p>General info, your most recent CV, and the jobs you've liked — jobhunter keeps learning what fits you from these.</p></div></section>
+
+        <section class="workspace-grid single">
+          <div class="panel profile-panel">
+            <div class="panel-heading"><div><h3>General information</h3></div></div>
+            <div class="field-grid">
+              <div class="field"><label for="profile-name">Name</label><input id="profile-name" /></div>
+              <div class="field"><label for="profile-email">Email</label><input id="profile-email" type="email" /></div>
+            </div>
+            <button class="outline-button" id="profile-save-info">Save changes</button>
+            <div class="profile-status" id="profile-info-status" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <section class="workspace-grid single">
+          <div class="panel profile-panel">
+            <div class="panel-heading"><div><h3>Most recent CV</h3></div></div>
+            <div id="profile-cv-content"><p class="profile-hint">Loading...</p></div>
+          </div>
+        </section>
+
+        <section class="results-section" id="profile-liked-section">
+          <div class="results-header"><div><h3>Liked jobs</h3></div><span class="result-count" id="profile-liked-count"></span></div>
+          <div class="results-grid" id="profile-liked-grid"></div>
+        </section>
       </div>
 
       <section class="results-section" id="health-section"><div class="results-header"><div><span class="section-number">04</span><h3>Source health</h3></div><span class="result-count" id="health-count">Checking...</span></div><div class="health-list" id="health-list"><div class="empty-results"><span class="empty-mark">·</span><strong>No checks yet.</strong><span>A background agent tests every source automatically and reports here.</span></div></div></section>
@@ -130,21 +175,67 @@ const $ = (id) => document.getElementById(id)
 const setStatusEl = (id, message, type = '') => { $(id).textContent = message; $(id).className = `profile-status ${type}` }
 const apiError = async (response) => { try { const body = await response.json(); return body.detail || 'Something went wrong.' } catch { return 'Could not reach the API.' } }
 
+// --- Login (demo only — no real auth, just a local identity for the profile page) ---
+
+function loadStoredUser() {
+  try {
+    const raw = localStorage.getItem(USER_STORAGE_KEY)
+    return raw ? JSON.parse(raw) : null
+  } catch { return null }
+}
+
+function saveStoredUser(user) {
+  state.user = user
+  try { localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user)) } catch { /* best effort — session still works without persistence */ }
+}
+
+function showLoginScreen() {
+  $('screen-login').hidden = false
+  $('app-shell').hidden = true
+}
+
+function showAppShell() {
+  $('screen-login').hidden = true
+  $('app-shell').hidden = false
+  $('topbar-greeting').textContent = state.user?.name ? `Welcome back, ${state.user.name}` : 'Welcome'
+}
+
+function logIn(user) {
+  saveStoredUser(user)
+  showAppShell()
+  goToUploadScreen()
+}
+
+function logOut() {
+  try { localStorage.removeItem(USER_STORAGE_KEY) } catch { /* best effort */ }
+  state.user = null
+  $('login-name').value = ''
+  $('login-email').value = ''
+  $('login-password').value = ''
+  showLoginScreen()
+}
+
 // --- Screen navigation ---
 
 function setActiveStep(index) {
   ;['step-1', 'step-2', 'step-3'].forEach((id, stepIndex) => $(id).classList.toggle('active', stepIndex === index))
 }
 
+function showMainScreen(name) {
+  $('screen-upload').hidden = name !== 'upload'
+  $('screen-search').hidden = name !== 'search'
+  $('screen-profile').hidden = name !== 'profile'
+  $('health-section').hidden = name === 'profile'
+  if (name !== 'profile') state.lastMainScreen = name
+}
+
 function goToUploadScreen() {
-  $('screen-search').hidden = true
-  $('screen-upload').hidden = false
+  showMainScreen('upload')
   setActiveStep(0)
 }
 
 function goToSearchScreen() {
-  $('screen-upload').hidden = true
-  $('screen-search').hidden = false
+  showMainScreen('search')
   const isMatcher = state.mode === 'matcher'
   $('search-screen-subtitle').textContent = isMatcher
     ? 'Filters run against your extracted profile, on top of jobs fetched live.'
@@ -153,6 +244,11 @@ function goToSearchScreen() {
     ? 'Jobs are fetched live for this role, then ranked against your extracted profile. Everything below is optional.'
     : 'Tell the agent what a good next role looks like. Role is the only thing required.'
   setActiveStep(1)
+}
+
+function goToProfileScreen() {
+  showMainScreen('profile')
+  loadProfileScreen()
 }
 
 // --- Screen 1: CV upload (optional) ---
@@ -505,11 +601,30 @@ function renderResultCard(result, index) {
   return `<article class="job-card" data-job-id="${result.job_id}"><div class="job-card-top"><span class="rank">${rank}</span><span class="match-score">${Math.round(result.overall_fit)}% match</span></div>${feedbackHtml}<span class="source">${job ? job.source || job.company : result.job_id}</span><h4>${job ? job.title : 'Job details unavailable'}</h4>${job ? `<p class="company">${job.company} <span>·</span> ${job.location || 'Unspecified'}</p>` : ''}${job ? `<div class="job-tags"><span>${job.remote_type === 'remote' ? 'Remote' : job.location || 'Unspecified'}</span><span>${(job.employment_type || '').replace('_', ' ')}</span></div>` : ''}${summary ? `<p class="job-description">${escapeHtml(summary)}</p>` : ''}${job && job.url ? `<a class="open-job" href="${job.url}" target="_blank" rel="noreferrer">Open posting ↗</a>` : ''}</article>`
 }
 
+function renderPagination(totalItems) {
+  const nav = $('pagination')
+  const pageCount = Math.ceil(totalItems / RESULTS_PER_PAGE)
+  if (pageCount <= 1) { nav.hidden = true; nav.innerHTML = ''; return }
+  nav.hidden = false
+  const page = state.currentPage
+  nav.innerHTML = `
+    <button type="button" class="text-button" id="page-prev" ${page <= 1 ? 'disabled' : ''}>← Prev</button>
+    <span class="pagination-status">Page ${page} of ${pageCount}</span>
+    <button type="button" class="text-button" id="page-next" ${page >= pageCount ? 'disabled' : ''}>Next →</button>
+  `
+  const goToPage = (nextPage) => { state.currentPage = nextPage; renderResultsGrid(state.results); $('results-grid').scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+  $('page-prev').addEventListener('click', () => goToPage(page - 1))
+  $('page-next').addEventListener('click', () => goToPage(page + 1))
+}
+
 function renderResultsGrid(items) {
   const grid = $('results-grid')
-  if (!items.length) { grid.innerHTML = '<div class="empty-results"><span class="empty-mark">—</span><strong>No matching roles yet.</strong><span>Try loosening the filters.</span></div>'; return }
-  grid.innerHTML = items.map((result, index) => renderResultCard(result, index)).join('')
+  if (!items.length) { grid.innerHTML = '<div class="empty-results"><span class="empty-mark">—</span><strong>No matching roles yet.</strong><span>Try loosening the filters.</span></div>'; renderPagination(0); return }
+  const start = (state.currentPage - 1) * RESULTS_PER_PAGE
+  const pageItems = items.slice(start, start + RESULTS_PER_PAGE)
+  grid.innerHTML = pageItems.map((result, index) => renderResultCard(result, start + index)).join('')
   wireResultCardEvents()
+  renderPagination(items.length)
 }
 
 async function setJobFeedback(jobId, rating) {
@@ -538,6 +653,7 @@ function wireResultCardEvents() {
 
 function renderResults(response) {
   state.results = response.results
+  state.currentPage = 1
   state.runId = response.run_id
   $('run-id').value = state.runId
   $('result-count').textContent = `${state.results.length} match${state.results.length === 1 ? '' : 'es'} · run saved`
@@ -565,8 +681,6 @@ async function loadJobFeedback() {
 async function runSearch() {
   const role = $('role').value.trim()
   if (!role) { $('result-count').textContent = 'Enter a role to search for.'; $('role').focus(); return }
-  const sources = [...document.querySelectorAll('input[name="source"]:checked')].map((input) => input.value)
-  if (!sources.length) { $('result-count').textContent = 'Select at least one source.'; return }
   $('run-search').disabled = true; $('run-search').innerHTML = 'Searching... <span>·</span>'
   const payload = {
     candidate_profile_id: state.mode === 'matcher' && state.candidateProfile ? state.candidateProfile.profile_id : null,
@@ -581,9 +695,9 @@ async function runSearch() {
     remote_type: $('remote-type').value || null,
     employment_type: $('employment').value || null,
     seniority: $('seniority').value || null,
-    min_score: Number($('min-score').value) || 0,
-    limit: Number($('limit').value) || 25,
-    sources,
+    min_score: 0,
+    limit: RESULTS_LIMIT,
+    sources: ALL_SOURCES,
   }
   try {
     const response = await fetch(`${API_URL}/api/search`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
@@ -605,6 +719,80 @@ async function loadRun() {
   } catch (error) { $('result-count').textContent = error.message }
 }
 
+// --- Screen: Profile (general info, most recent CV, liked jobs) ---
+
+function renderProfileGeneralInfo() {
+  $('profile-name').value = state.user?.name || ''
+  $('profile-email').value = state.user?.email || ''
+}
+
+function renderProfileCv(profile) {
+  const content = $('profile-cv-content')
+  if (!profile) {
+    content.innerHTML = '<p class="profile-hint">No CV on file yet — upload one to get ranked, explained matches.</p><button type="button" class="outline-button" id="profile-upload-cv">Upload a CV</button>'
+    $('profile-upload-cv').addEventListener('click', goToUploadScreen)
+    return
+  }
+  const skillsHtml = (profile.skills || []).map((skill) => `<span class="cm-tag">${escapeHtml(skill.normalized_name)}</span>`).join('')
+  const languagesHtml = (profile.languages || []).map((language) => `<span class="cm-tag">${escapeHtml(language.language)}${language.level ? ` · ${escapeHtml(language.level)}` : ''}</span>`).join('')
+  const seniority = profile.seniority_level ? `${profile.seniority_level[0].toUpperCase()}${profile.seniority_level.slice(1)}` : 'Not set'
+  content.innerHTML = `
+    <div class="cm-summary">
+      <strong>${escapeHtml(profile.full_name || 'Unnamed candidate')}</strong>${profile.headline ? `<span>${escapeHtml(profile.headline)}</span>` : ''}
+      <div class="cm-subsection"><h5>Experience</h5><p class="profile-hint" style="text-align:left;margin:0">${seniority} · ${profile.years_of_experience_total ?? '—'} years</p></div>
+      <div class="cm-subsection"><h5>Skills</h5><div class="cm-tag-list">${skillsHtml || '<span class="profile-hint">No skills extracted.</span>'}</div></div>
+      <div class="cm-subsection"><h5>Languages</h5><div class="cm-tag-list">${languagesHtml || '<span class="profile-hint">No languages extracted.</span>'}</div></div>
+    </div>
+    <button type="button" class="text-button" id="profile-update-cv">Update CV →</button>
+  `
+  $('profile-update-cv').addEventListener('click', goToUploadScreen)
+}
+
+async function loadLatestCv() {
+  try {
+    const response = await fetch(`${API_URL}/api/candidates/latest`)
+    if (!response.ok) { renderProfileCv(null); return }
+    const body = await response.text()
+    renderProfileCv(body ? JSON.parse(body) : null)
+  } catch { renderProfileCv(null) }
+}
+
+function renderLikedJobCard(jobId) {
+  const job = state.jobsById[jobId]
+  const summary = summarizeDescription(job && job.description)
+  const feedbackHtml = `<div class="job-card-actions"><button type="button" class="feedback-btn like-btn is-active" data-job-id="${jobId}" data-rating="like" aria-label="Unlike this job" aria-pressed="true">👍</button><button type="button" class="feedback-btn dislike-btn" data-job-id="${jobId}" data-rating="dislike" aria-label="Dislike this job" aria-pressed="false">👎</button></div>`
+  return `<article class="job-card" data-job-id="${jobId}"><div class="job-card-top"><span class="source">${job ? job.source || job.company : jobId}</span></div>${feedbackHtml}<h4>${job ? job.title : 'Job details unavailable'}</h4>${job ? `<p class="company">${job.company} <span>·</span> ${job.location || 'Unspecified'}</p>` : ''}${job ? `<div class="job-tags"><span>${job.remote_type === 'remote' ? 'Remote' : job.location || 'Unspecified'}</span><span>${(job.employment_type || '').replace('_', ' ')}</span></div>` : ''}${summary ? `<p class="job-description">${escapeHtml(summary)}</p>` : ''}${job && job.url ? `<a class="open-job" href="${job.url}" target="_blank" rel="noreferrer">Open posting ↗</a>` : ''}</article>`
+}
+
+function renderLikedJobs() {
+  const likedIds = Object.entries(state.feedbackByJobId).filter(([, rating]) => rating === 'like').map(([jobId]) => jobId)
+  const grid = $('profile-liked-grid')
+  $('profile-liked-count').textContent = `${likedIds.length} job${likedIds.length === 1 ? '' : 's'} liked`
+  if (!likedIds.length) { grid.innerHTML = '<div class="empty-results"><span class="empty-mark">—</span><strong>No liked jobs yet.</strong><span>Like a job from your search results to see it here.</span></div>'; return }
+  grid.innerHTML = likedIds.map(renderLikedJobCard).join('')
+  grid.querySelectorAll('.feedback-btn').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await setJobFeedback(button.dataset.jobId, button.dataset.rating)
+      renderLikedJobs()
+    })
+  })
+}
+
+async function loadProfileScreen() {
+  renderProfileGeneralInfo()
+  $('profile-cv-content').innerHTML = '<p class="profile-hint">Loading...</p>'
+  await Promise.all([loadLatestCv(), loadJobsById(), loadJobFeedback()])
+  renderLikedJobs()
+}
+
+function saveProfileGeneralInfo() {
+  const name = $('profile-name').value.trim()
+  if (!name) { setStatusEl('profile-info-status', 'Name is required.', 'error'); return }
+  saveStoredUser({ name, email: $('profile-email').value.trim() })
+  $('topbar-greeting').textContent = `Welcome back, ${name}`
+  setStatusEl('profile-info-status', 'Saved.', 'success')
+}
+
 // --- Wiring ---
 
 $('cm-choose-file').addEventListener('click', () => $('cm-cv-file').click())
@@ -618,17 +806,34 @@ $('skip-upload').addEventListener('click', () => { state.mode = 'plain'; goToSea
 $('continue-to-search').addEventListener('click', () => { state.mode = 'matcher'; goToSearchScreen() })
 $('back-to-upload').addEventListener('click', goToUploadScreen)
 
-$('select-all-sources').addEventListener('click', () => { document.querySelectorAll('input[name="source"]').forEach((input) => { input.checked = true }) })
-$('deselect-all-sources').addEventListener('click', () => { document.querySelectorAll('input[name="source"]').forEach((input) => { input.checked = false }) })
 $('run-search').addEventListener('click', runSearch)
 $('load-run').addEventListener('click', loadRun)
 $('health-button').addEventListener('click', async () => { try { const response = await fetch(`${API_URL}/health`); $('health-button').innerHTML = `<span class="pulse good"></span>${response.ok ? 'API connected' : 'API issue'}` } catch { $('health-button').innerHTML = '<span class="pulse bad"></span>API offline' } })
+
+$('profile-button').addEventListener('click', goToProfileScreen)
+$('back-from-profile').addEventListener('click', () => showMainScreen(state.lastMainScreen))
+$('profile-save-info').addEventListener('click', saveProfileGeneralInfo)
+$('logout-button').addEventListener('click', logOut)
+
+$('login-submit').addEventListener('click', () => {
+  const name = $('login-name').value.trim()
+  if (!name) { setStatusEl('login-status', 'Enter a name to continue.', 'error'); $('login-name').focus(); return }
+  logIn({ name, email: $('login-email').value.trim() })
+})
+$('login-password').addEventListener('keydown', (event) => { if (event.key === 'Enter') $('login-submit').click() })
 
 wireCountrySearch()
 wireLanguageSearch()
 ensureSearchMetadata()
 
-setActiveStep(0)
+const storedUser = loadStoredUser()
+if (storedUser) {
+  state.user = storedUser
+  showAppShell()
+  goToUploadScreen()
+} else {
+  showLoginScreen()
+}
 
 function timeAgo(iso) {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000)

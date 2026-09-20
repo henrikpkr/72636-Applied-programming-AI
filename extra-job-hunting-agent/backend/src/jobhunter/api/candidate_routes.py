@@ -78,6 +78,13 @@ async def upload_candidate_cv(cv_file: UploadFile = File(...)) -> CandidateProfi
     return profile
 
 
+@router.get("/candidates/latest", response_model=CandidateProfile | None)
+def get_latest_candidate_profile() -> CandidateProfile | None:
+    """Most recent CV on file for this workspace, for the profile page. None (not a 404) when
+    no CV has ever been uploaded — that's an expected, common state, not an error."""
+    return candidate_repository.get_latest_profile()
+
+
 @router.get("/skills-catalog", response_model=list[str])
 def get_skills_catalog() -> list[str]:
     """Known skill terms for the CV-summary editor's add-a-skill autocomplete."""

@@ -5,7 +5,11 @@ from pathlib import Path
 from xml.etree import ElementTree
 from zipfile import ZipFile
 
-from pypdf import PdfReader
+import fitz  # PyMuPDF
+import pytesseract
+from PIL import Image
+
+_OCR_DPI = 300
 
 
 def parse_cv_file(filename: str, file_bytes: bytes) -> str:
@@ -36,8 +40,17 @@ def parse_cv_file_pages(filename: str, file_bytes: bytes) -> tuple[str, list[str
 
 
 def _parse_pdf(file_bytes: bytes) -> tuple[str, list[str]]:
-    reader = PdfReader(BytesIO(file_bytes))
-    pages = [(page.extract_text() or "").strip() for page in reader.pages]
+    """Render each page to an image and run OCR (Tesseract) to extract its text."""
+    zoom = _OCR_DPI / 72
+    matrix = fitz.Matrix(zoom, zoom)
+    pages = []
+
+    with fitz.open(stream=file_bytes, filetype="pdf") as document:
+        for page in document:
+            pixmap = page.get_pixmap(matrix=matrix)
+            image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+            pages.append(pytesseract.image_to_string(image, lang="deu+eng").strip())
+
     text = "\n".join(pages).strip()
     if not text:
         raise ValueError("could not extract text from pdf")
