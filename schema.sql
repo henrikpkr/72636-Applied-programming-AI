@@ -15,6 +15,12 @@ create table if not exists public.books (
   scraped_at     timestamptz not null default now()
 );
 
+-- Allow public read access through the REST API (anon key). Writes need the service_role key.
+alter table public.books enable row level security;
+drop policy if exists "Public read access" on public.books;
+create policy "Public read access" on public.books
+  for select to anon, authenticated using (true);
+
 -- Public bucket for cover images (the scraper also creates it if missing).
 insert into storage.buckets (id, name, public)
 values ('book-covers', 'book-covers', true)
