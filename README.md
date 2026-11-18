@@ -98,6 +98,19 @@ sb.table("books").select("title, price_gbp").eq("category", "Poetry").order("pri
 
 Cover images are served publicly at `$SUPABASE_URL/storage/v1/object/public/book-covers/<upc>.jpg`.
 
+## Dashboard (Next.js + Recharts)
+
+`dashboard/` is a small Next.js app that reads the `books` table from Supabase (server-side, with the anon key) and shows: total books, average price, average rating, % in stock, genre distribution, average price by category, rating distribution and price distribution. Data refreshes at most once a minute.
+
+```bash
+cd dashboard
+cp .env.local.example .env.local   # fill in SUPABASE URL + anon key
+npm install
+npm run dev                        # http://localhost:3000
+```
+
+Note: books.toscrape.com has no author or publication-year data, so those statistics are replaced by category, rating and price statistics.
+
 ## Tech stack
 
-Python · `requests` · `BeautifulSoup4` · `supabase-py` · `python-dotenv` · Supabase (PostgreSQL + Storage + PostgREST)
+Python · Next.js · Recharts · `requests` · `BeautifulSoup4` · `supabase-py` · `python-dotenv` · Supabase (PostgreSQL + Storage + PostgREST)
