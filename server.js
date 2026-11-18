@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { tvmaze } from './providers.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
 await mkdir(join(ROOT, 'data'), { recursive: true });
 
 const db = new DatabaseSync(join(ROOT, 'data', 'swipes.db'));
