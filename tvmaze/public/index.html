@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>tv-place</title>
+<style>
+  :root { --bg:#0f1115; --card:#1a1d24; --fg:#f2f3f5; --mute:#8b92a0; --like:#2ecc71; --nope:#ff4d5e; }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 15px/1.4 system-ui, sans-serif; min-height: 100dvh; display: flex; flex-direction: column; align-items: center; overflow-x: hidden; }
+  header { width: 100%; max-width: 440px; display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 6px; }
+  h1 { font-size: 18px; letter-spacing: .5px; }
+  nav button, .filters button { background: none; border: 1px solid #2c313b; color: var(--mute); padding: 6px 12px; border-radius: 99px; cursor: pointer; font: inherit; font-size: 13px; }
+  nav button.on, .filters button.on { color: var(--fg); border-color: var(--fg); }
+  .filters { display: flex; gap: 6px; padding: 4px 16px 10px; width: 100%; max-width: 440px; }
+  #stack { position: relative; width: min(92vw, 400px); aspect-ratio: 2/3.1; margin-top: 6px; touch-action: none; }
+  .card { position: absolute; inset: 0; background: var(--card) center/cover; border-radius: 20px; overflow: hidden; box-shadow: 0 10px 30px #0008; user-select: none; will-change: transform; }
+  .card:not(.top) { transform: scale(.95) translateY(10px); filter: brightness(.6); pointer-events: none; }
+  .card.top { cursor: grab; }
+  .card .info { position: absolute; left: 0; right: 0; bottom: 0; padding: 60px 16px 16px; background: linear-gradient(transparent, #000e 60%); }
+  .card h2 { font-size: 22px; }
+  .meta { color: #cfd3da; font-size: 13px; margin: 2px 0 6px; }
+  .sum { color: #d6d9df; font-size: 13px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .badge { position: absolute; top: 24px; padding: 4px 14px; border: 4px solid; border-radius: 10px; font-size: 30px; font-weight: 800; opacity: 0; letter-spacing: 2px; }
+  .badge.like { left: 20px; color: var(--like); transform: rotate(-14deg); }
+  .badge.nope { right: 20px; color: var(--nope); transform: rotate(14deg); }
+  .kind { position: absolute; top: 12px; right: 12px; background: #000a; padding: 3px 10px; border-radius: 99px; font-size: 12px; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; color: var(--mute); }
+  .actions { display: flex; gap: 22px; margin: 22px 0 8px; }
+  .actions button { width: 64px; height: 64px; border-radius: 50%; border: 2px solid; background: var(--card); font-size: 26px; cursor: pointer; }
+  .actions .nope { color: var(--nope); } .actions .like { color: var(--like); }
+  .actions .undo { width: 44px; height: 44px; font-size: 18px; color: var(--mute); align-self: center; border-color: #2c313b; }
+  .hint { color: var(--mute); font-size: 12px; }
+  #list { width: 100%; max-width: 440px; padding: 0 16px 30px; display: none; }
+  .row { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #22262e; align-items: center; }
+  .row img { width: 56px; height: 80px; object-fit: cover; border-radius: 8px; background: var(--card); }
+  .row .t { flex: 1; } .row a { color: var(--fg); text-decoration: none; font-weight: 600; }
+  .row button { background: none; border: none; color: var(--mute); cursor: pointer; font-size: 18px; }
+  .tags { color: var(--mute); font-size: 13px; padding: 4px 0 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📺 tv-place</h1>
+  <nav><button id="tab-swipe" class="on">Swipe</button> <button id="tab-likes">Liked</button> <button id="tab-nope">Passed</button></nav>
+</header>
+
+<div id="swipeView" style="display:contents">
+  <div class="filters" id="filters" hidden>
+    <button data-k="" class="on">All</button><button data-k="movie">Movies</button><button data-k="series">Series</button>
+  </div>
+  <div id="stack"></div>
+  <div class="actions">
+    <button class="nope" id="btn-nope" title="Nope (←)">✕</button>
+    <button class="undo" id="btn-undo" title="Undo (Z)">↺</button>
+    <button class="like" id="btn-like" title="Like (→)">♥</button>
+  </div>
+  <p class="hint">Drag the card, use ← → keys, or tap the buttons.</p>
+</div>
+
+<div id="list"><div class="tags" id="tags"></div><div id="rows"></div></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const stack = $('#stack');
+let deck = [], kind = '', loading = false, history = [];
+
+async function api(path, opts) { const r = await fetch(path, opts); return r.json(); }
+
+async function refill() {
+  if (loading) return; loading = true;
+  const seen = new Set(deck.map((t) => t.id));
+  const more = await api(`/api/deck?n=8&kind=${kind}`);
+  deck.push(...more.filter((t) => !seen.has(t.id)));
+  loading = false; render();
+}
+
+function render() {
+  stack.innerHTML = '';
+  if (!deck.length) {
+    stack.innerHTML = `<div class="empty">${loading ? 'Loading…' : 'No more titles right now.<br>Try again in a moment.'}</div>`;
+    if (!loading) setTimeout(refill, 1500);
+    return;
+  }
+  deck.slice(0, 3).reverse().forEach((t, i, a) => stack.append(card(t, i === a.length - 1)));
+  if (deck.length < 5) refill();
+}
+
+function card(t, top) {
+  const el = document.createElement('div');
+  el.className = 'card' + (top ? ' top' : '');
+  el.style.backgroundImage = `url("${t.image}")`;
+  el.innerHTML = `
+    <span class="kind">${t.kind === 'movie' ? '🎬 Movie' : '📺 Series'}</span>
+    <span class="badge like">LIKE</span><span class="badge nope">NOPE</span>
+    <div class="info"><h2></h2><div class="meta"></div><div class="sum"></div></div>`;
+  el.querySelector('h2').textContent = t.name;
+  el.querySelector('.meta').textContent = [t.year, t.genres.slice(0, 3).join(' · '), t.rating ? `★ ${t.rating}` : ''].filter(Boolean).join('  •  ');
+  el.querySelector('.sum').textContent = t.summary;
+  if (top) drag(el);
+  return el;
+}
+
+function drag(el) {
+  let sx = 0, sy = 0, dx = 0, dragging = false;
+  const like = el.querySelector('.badge.like'), nope = el.querySelector('.badge.nope');
+  el.addEventListener('pointerdown', (e) => { dragging = true; sx = e.clientX; sy = e.clientY; el.setPointerCapture(e.pointerId); el.style.transition = 'none'; });
+  el.addEventListener('pointermove', (e) => {
+    if (!dragging) return;
+    dx = e.clientX - sx; const dy = (e.clientY - sy) * .3;
+    el.style.transform = `translate(${dx}px,${dy}px) rotate(${dx / 18}deg)`;
+    like.style.opacity = Math.max(0, dx / 100); nope.style.opacity = Math.max(0, -dx / 100);
+  });
+  const end = () => {
+    if (!dragging) return; dragging = false;
+    if (Math.abs(dx) > 100) return decide(dx > 0 ? 'like' : 'dislike');
+    el.style.transition = 'transform .25s'; el.style.transform = ''; like.style.opacity = nope.style.opacity = 0; dx = 0;
+  };
+  el.addEventListener('pointerup', end); el.addEventListener('pointercancel', end);
+}
+
+function decide(decision) {
+  const t = deck[0]; if (!t) return;
+  const el = stack.querySelector('.card.top');
+  const dir = decision === 'like' ? 1 : -1;
+  el.style.transition = 'transform .3s, opacity .3s';
+  el.style.transform = `translate(${dir * 600}px, 40px) rotate(${dir * 30}deg)`; el.style.opacity = 0;
+  deck.shift(); history.push(t);
+  api('/api/swipe', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ title: t, decision }) });
+  setTimeout(render, 260);
+}
+
+async function undo() {
+  const t = history.pop(); if (!t) return;
+  await api('/api/swipe/' + encodeURIComponent(t.id), { method: 'DELETE' });
+  deck.unshift(t); render();
+}
+
+$('#btn-like').onclick = () => decide('like');
+$('#btn-nope').onclick = () => decide('dislike');
+$('#btn-undo').onclick = undo;
+addEventListener('keydown', (e) => {
+  if ($('#swipeView').style.display === 'none') return;
+  if (e.key === 'ArrowRight') decide('like'); else if (e.key === 'ArrowLeft') decide('dislike'); else if (e.key === 'z') undo();
+});
+
+document.querySelectorAll('.filters button').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('.filters button').forEach((x) => x.classList.toggle('on', x === b));
+  kind = b.dataset.k; deck = []; render(); refill();
+});
+
+// tabs
+function tab(name) {
+  ['swipe', 'likes', 'nope'].forEach((n) => $('#tab-' + n).classList.toggle('on', n === name));
+  $('#swipeView').style.display = name === 'swipe' ? 'contents' : 'none';
+  $('#list').style.display = name === 'swipe' ? 'none' : 'block';
+  if (name !== 'swipe') showList(name === 'likes' ? 'like' : 'dislike');
+}
+async function showList(decision) {
+  const [rows, stats] = await Promise.all([api('/api/likes?decision=' + decision), api('/api/stats')]);
+  $('#tags').textContent = stats.topGenres.length ? `You like: ${stats.topGenres.join(', ')}  •  ${stats.counts.like || 0} liked / ${stats.counts.dislike || 0} passed` : 'Swipe a few titles to build your taste profile.';
+  $('#rows').innerHTML = '';
+  for (const t of rows) {
+    const r = document.createElement('div'); r.className = 'row';
+    r.innerHTML = `<img><div class="t"><a target="_blank" rel="noopener"></a><div class="meta"></div></div><button title="Remove">✕</button>`;
+    r.querySelector('img').src = t.image;
+    const a = r.querySelector('a'); a.textContent = t.name; a.href = t.url;
+    r.querySelector('.meta').textContent = [t.kind === 'movie' ? 'Movie' : 'Series', t.year, t.genres.slice(0, 2).join(', ')].filter(Boolean).join(' • ');
+    r.querySelector('button').onclick = async () => { await api('/api/swipe/' + encodeURIComponent(t.id), { method: 'DELETE' }); r.remove(); };
+    $('#rows').append(r);
+  }
+}
+$('#tab-swipe').onclick = () => tab('swipe'); $('#tab-likes').onclick = () => tab('likes'); $('#tab-nope').onclick = () => tab('nope');
+
+api('/api/config').then((c) => { $('#filters').hidden = !c.hasMovies; });
+render(); refill();
+</script>
+</body>
+</html>
