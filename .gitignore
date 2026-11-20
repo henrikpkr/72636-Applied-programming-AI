@@ -1,0 +1,19 @@
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Secrets and local config
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+dist/
+.venv/
+__pycache__/
+
+# Local assignment material (not part of the submission)
+converted.md
+individual-submission.pdf
