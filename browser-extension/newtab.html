@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>New Tab</title>
+  <link rel="stylesheet" href="newtab.css">
+</head>
+<body>
+  <main class="center">
+    <div id="clock" class="clock">--:--</div>
+    <h1 class="greeting"><span id="greetWord">Hello</span>, <span id="name" contenteditable="true" spellcheck="false" title="Click to edit your name">friend</span>.</h1>
+
+    <section class="focus">
+      <label for="focusInput" id="focusLabel">What is your main focus for today?</label>
+      <input id="focusInput" type="text" autocomplete="off">
+      <div id="focusDone" class="focus-done" hidden>
+        <input type="checkbox" id="focusCheck">
+        <span id="focusText"></span>
+        <button id="focusClear" class="link" title="Clear focus">×</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="quote" id="quote"></footer>
+
+  <button class="corner left" id="mdToggle">Markdown</button>
+  <button class="corner right" id="todoToggle">To-do</button>
+
+  <aside class="panel left" id="mdPanel" hidden>
+    <h2>File → Markdown</h2>
+    <div id="dropzone" class="dropzone">Drop a file or click to choose<br><small>pdf · docx · html · csv · json · txt · md</small></div>
+    <input type="file" id="fileInput" hidden>
+    <textarea id="output" placeholder="Markdown output…"></textarea>
+    <div class="buttons">
+      <button id="copyBtn">Copy</button>
+      <button id="downloadBtn">Download .md</button>
+    </div>
+  </aside>
+
+  <aside class="panel right" id="todoPanel" hidden>
+    <h2>To-do</h2>
+    <ul id="todoList"></ul>
+    <input id="todoInput" type="text" placeholder="New to-do" autocomplete="off">
+  </aside>
+
+  <script type="module" src="newtab.js"></script>
+</body>
+</html>

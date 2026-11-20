@@ -6,6 +6,6 @@ export default defineConfig({
         outDir: "dist",
         emptyOutDir: true,
         target: "esnext",
-        rollupOptions: { input: "popup.html" }
+        rollupOptions: { input: ["popup.html", "newtab.html"] }
     }
 });

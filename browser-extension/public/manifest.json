@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
-  "name": "Markdownify AI",
-  "version": "0.1.0",
-  "description": "Convert files to Markdown locally.",
+  "name": "Markdownify Tab",
+  "version": "0.2.0",
+  "description": "A new tab dashboard (clock, greeting, daily focus, to-dos, quote) with a built-in local file-to-Markdown converter.",
   "action": {
     "default_popup": "popup.html"
-  }
+  },
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "permissions": ["storage"]
 }
-
