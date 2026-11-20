@@ -1,39 +1,17 @@
 import Papa from "papaparse";
 
+// Escape pipes and flatten line breaks so a cell cannot break the Markdown table.
+const cell = value => String(value ?? "").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
+const row = cells => "| " + cells.map(cell).join(" | ") + " |";
+
 export async function csvToMarkdown(file) {
+    const { data: rows } = Papa.parse(await file.text(), { skipEmptyLines: true });
+    if (!rows.length) return "";
 
-    const text =
-        await file.text();
-
-    const parsed =
-        Papa.parse(text);
-
-    const rows = parsed.data;
-
-    if (!rows.length) {
-        return "";
-    }
-
-    const header = rows[0];
-
-    const markdown = [];
-
-    markdown.push(
-        "| " + header.join(" | ") + " |"
-    );
-
-    markdown.push(
-        "| " +
-        header.map(() => "---").join(" | ")
-        + " |"
-    );
-
-    for (const row of rows.slice(1)) {
-
-        markdown.push(
-            "| " + row.join(" | ") + " |"
-        );
-    }
-
-    return markdown.join("\n");
+    const [header, ...body] = rows;
+    return [
+        row(header),
+        row(header.map(() => "---")),
+        ...body.map(r => row(header.map((_, i) => r[i])))
+    ].join("\n");
 }

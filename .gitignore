@@ -6,7 +6,7 @@
 # Secrets and local config
 .env
 .env.*
-!.env.example
+!*.example
 
 # Dependencies and build output
 node_modules/

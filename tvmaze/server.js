@@ -7,6 +7,8 @@ import { tvmaze } from './providers.js';
 
 const ROOT = fileURLToPath(new URL('.', import.meta.url));
 const PORT = process.env.PORT || 3001;
+// Local-only by default: the API has no authentication. Set HOST=0.0.0.0 to expose it on your network.
+const HOST = process.env.HOST || '127.0.0.1';
 await mkdir(join(ROOT, 'data'), { recursive: true });
 
 const db = new DatabaseSync(join(ROOT, 'data', 'swipes.db'));
@@ -98,4 +100,4 @@ createServer(async (req, res) => {
     console.error(e);
     json(res, 500, { error: e.message });
   }
-}).listen(PORT, () => console.log(`tv-place → http://localhost:${PORT}  (source: TVmaze)`));
+}).listen(PORT, HOST, () => console.log(`tv-place → http://localhost:${PORT}  (source: TVmaze)`));

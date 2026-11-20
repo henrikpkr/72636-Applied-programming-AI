@@ -1,8 +1,21 @@
-# booksscrape
+# Books to Scrape: scraper, database and dashboard
 
 A Python web scraper that collects the full catalogue of [books.toscrape.com](https://books.toscrape.com/) (a sandbox site built for scraping practice), stores the structured data in a **Supabase (PostgreSQL)** table, and uploads the cover images to **Supabase Storage**. The data is then queryable through Supabase's auto-generated REST API.
 
-## How it works
+![Book Discovery Dashboard](docs/screenshot-dashboard.png)
+
+## Purpose
+
+The project turns a website that only humans can browse into a dataset that can be queried and analysed. It has three parts:
+
+1. **Scraper** (`scraper.py`) collects every book from books.toscrape.com.
+2. **Database** (Supabase Postgres and Storage) keeps the books and their cover images.
+3. **Interface**: a Next.js dashboard (`dashboard/`) with summary statistics and charts, plus the REST API that Supabase generates automatically.
+
+## Data collection
+
+books.toscrape.com is a public sandbox shop built for scraping practice, so scraping it is allowed and there is no API. The scraper requests the HTML pages with `requests` and parses them with BeautifulSoup:
+
 
 ```
 books.toscrape.com ──requests + BeautifulSoup──> scraper.py ──supabase-py──> Postgres table `books`
@@ -16,6 +29,16 @@ books.toscrape.com ──requests + BeautifulSoup──> scraper.py ──supaba
 
 Robustness: requests retry 3× with exponential backoff, a 0.2 s delay between requests keeps the load on the server low, and a failure on one book is logged and skipped rather than aborting the run.
 
+## Data persistence
+
+| What | Where | Why |
+| --- | --- | --- |
+| One row per book (see the data model below) | Supabase Postgres, table `public.books` | A relational table with constraints (`upc` primary key, rating `CHECK`) keeps the data clean, and Supabase gives a REST API and a hosted database for free |
+| Cover images | Supabase Storage, public bucket `book-covers`, stored as `<upc>.jpg` | Images don't belong in table rows. A public bucket gives each cover a stable URL, which is saved in `image_public_url` |
+| Credentials | Local `.env` / `dashboard/.env.local` (git-ignored) | Keys must never be committed. `.env.example` and `dashboard/.env.local.example` show the required variables |
+
+Re-running the scraper **upserts** on `upc`, so it updates existing rows instead of duplicating them. Row Level Security allows anyone to read, but only the `service_role` key (used by the scraper) can write.
+
 ## Project structure
 
 | File | Purpose |
@@ -24,7 +47,9 @@ Robustness: requests retry 3× with exponential backoff, a 0.2 s delay between r
 | `schema.sql` | Table definition and storage bucket, run once in Supabase |
 | `requirements.txt` | Python dependencies |
 | `supabase/config.toml` | Supabase CLI project config (for optional local development) |
-| `.env` | Credentials (not committed) |
+| `.env.example` | Template for the scraper's `.env` (the real `.env` is not committed) |
+| `dashboard/` | Next.js + Recharts dashboard (the user interface) |
+| `docs/` | Screenshot |
 
 ## Setup
 
@@ -39,15 +64,16 @@ pip install -r requirements.txt
 # 2. Create the table and bucket:
 #    paste schema.sql into Supabase Dashboard -> SQL Editor -> Run
 
-# 3. Configure credentials
-cat > .env <<'EOF'
-SUPABASE_URL=https://<project-ref>.supabase.co
-SUPABASE_SERVICE_KEY=<service_role key>   # Project Settings -> API. Server-side only, never commit!
-SUPABASE_BUCKET=book-covers
-EOF
+# 3. Configure credentials (Project Settings -> API in Supabase)
+cp .env.example .env               # then fill in SUPABASE_URL and SUPABASE_SERVICE_KEY
+# The service_role key can write to everything: keep it server-side and never commit it.
 ```
 
-## Usage
+## User interaction
+
+There are three ways to use the data: run the scraper from the command line, browse the dashboard, or query the REST API.
+
+### Scraper (CLI)
 
 ```bash
 python scraper.py                  # scrape all ~1000 books + images
@@ -73,7 +99,7 @@ python scraper.py --dry-run        # scrape and log only, write nothing to Supab
 | `image_path` / `image_public_url` | text | file path and public URL in Supabase Storage |
 | `scraped_at` | timestamptz | defaults to `now()` |
 
-## API
+### REST API
 
 The project does not run its own server. Supabase automatically exposes the `books` table as a REST API (PostgREST) at `https://<project-ref>.supabase.co/rest/v1/books`. Authenticate with the project's `anon` key (Project Settings -> API); `schema.sql` enables Row Level Security with a public read-only policy. The scraper itself uses the `service_role` key, which bypasses RLS and is the only one that can write.
 
@@ -98,7 +124,7 @@ sb.table("books").select("title, price_gbp").eq("category", "Poetry").order("pri
 
 Cover images are served publicly at `$SUPABASE_URL/storage/v1/object/public/book-covers/<upc>.jpg`.
 
-## Dashboard (Next.js + Recharts)
+### Dashboard (Next.js + Recharts)
 
 `dashboard/` is a small Next.js app that reads the `books` table from Supabase (server-side, with the anon key) and shows: total books, average price, average rating, % in stock, genre distribution, average price by category, rating distribution and price distribution. Data refreshes at most once a minute.
 
@@ -114,3 +140,24 @@ Note: books.toscrape.com has no author or publication-year data, so those statis
 ## Tech stack
 
 Python · Next.js · Recharts · `requests` · `BeautifulSoup4` · `supabase-py` · `python-dotenv` · Supabase (PostgreSQL + Storage + PostgREST)
+
+## Learning
+
+- **Encoding.** The site sends no charset header, so `requests` falls back to ISO-8859-1 and the pound sign turns into mojibake (`Â£`). Setting `resp.encoding = "utf-8"` in `get_soup()` fixes it.
+- **Idempotent writes.** A plain insert would create duplicates every time the scraper is re-run. Using the UPC as the primary key and `upsert(..., on_conflict="upc")` makes it safe to re-run at any time.
+- **Supabase keys and RLS.** The `anon` key is meant to be public, and Row Level Security decides what it can do. The `service_role` key bypasses RLS and must stay secret. I enabled RLS with a read-only policy so the dashboard and API can use the anon key safely.
+- **Challenge: the 1000-row limit.** Supabase returns at most 1000 rows per request, so a single query would silently cut off the catalogue. The dashboard solves this by paging with `.range(from, from + 999)` until a page comes back short (`getBooks()` in `dashboard/app/page.js`).
+
+## Limitations and assistance
+
+**Limitations**
+- The site has no author or publication-year data, so the dashboard uses category, rating and price instead.
+- The scraper runs sequentially, with a 0.2 s delay per request, so a full run with images takes several minutes. That is deliberate, to stay polite to the server.
+- My Supabase database currently holds 826 of the roughly 1000 books (shown in the screenshot), because the last full run didn't finish. Running `python scraper.py` again completes it without duplicates.
+- "Default" and "Add a comment" in the genre chart are real category names on the source site, not parsing errors.
+- No automated tests. The parser depends on the site's HTML structure and would break if it changed.
+- `supabase/config.toml` is the Supabase CLI default, kept for optional local development. The project itself uses a hosted Supabase project.
+
+**Assistance**
+- Libraries: requests, BeautifulSoup4, supabase-py, python-dotenv, Next.js, Recharts, supabase-js.
+- AI: Claude Code (Anthropic) was used to merge this project into the course repository, run the publication audit (see [AUDIT.md](AUDIT.md)), add the configuration templates and draft the README sections for purpose, persistence, learning and limitations.

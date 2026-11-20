@@ -54,7 +54,7 @@ function computeStats(books) {
     total: books.length,
     avgPrice: avg(books.map((b) => Number(b.price_gbp))),
     avgRating: avg(books.map((b) => b.rating)),
-    inStockPct: (books.filter((b) => b.in_stock).length / books.length) * 100,
+    inStockPct: books.length ? (books.filter((b) => b.in_stock).length / books.length) * 100 : 0,
     topCategories: [...categories].sort((a, b) => b.count - a.count).slice(0, 10),
     priciestCategories: categories
       .filter((c) => c.count >= 3)

@@ -1,18 +1,36 @@
-# tv-place
+# tv-place: TVmaze API project
 
-Swipe through TV series, Tinder-style. Swipe right (or press ♥) to like a show and left (or ✕) to pass. Your choices are saved in a local SQLite database and shape what you see next.
+![Swipe screen](docs/screenshot-swipe.png)
+
+## Purpose
+
+A small web app for discovering TV series. Swipe through TV series, Tinder-style. Swipe right (or press ♥) to like a show and left (or ✕) to pass. Your choices are saved in a local SQLite database and shape what you see next.
 
 Show data comes from the free [TVmaze API](https://www.tvmaze.com/api), so no API key is needed.
 
-## Run it
+## Setup
 
-Requires Node 22.13 or newer. There is nothing to install: the project uses only Node's built-in modules (`node:http`, `node:sqlite`, `fetch`).
+Requires Node 22.13 or newer. There is nothing to install: the project uses only Node's built-in modules (`node:http`, `node:sqlite`, `fetch`), so there are no dependencies and no API key.
 
 ```
-node server.js
+cd tvmaze
+node server.js        # or: npm start
 ```
 
-Open http://localhost:3001. Set the `PORT` environment variable to use a different port.
+Open http://localhost:3001. Optional environment variables:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `PORT` | `3001` | Port to listen on |
+| `HOST` | `127.0.0.1` | Interface to bind. The API has no authentication, so it only listens locally by default. Use `HOST=0.0.0.0` to open it on your network, for example from a phone |
+
+The database file `data/swipes.db` is created automatically on first run. Delete it to start over.
+
+## User interaction
+
+- **Swipe** tab: drag the top card right to like it or left to pass. You can also use the ← / → keys or the ✕ / ♥ buttons. ↺ undoes the last swipe.
+- **Liked** / **Passed** tabs: lists of your decisions. Click a title to open it on TVmaze, or ✕ to remove the decision (the show can then appear again).
+- The deck learns from your swipes: genres you like are ranked higher (see "How the recommendation works").
 
 ## Architecture
 
@@ -121,7 +139,7 @@ Returns `{"hasMovies": false}`. The frontend uses it to decide whether to show t
 
 Other paths are served from `public/` (`/` maps to `index.html`). A missing file returns `404`, and an unexpected server error returns `500` with `{"error": "..."}`.
 
-## The external API: TVmaze
+## Data collection: the TVmaze API
 
 [TVmaze](https://www.tvmaze.com/api) is a public, read-only REST API for TV data. It needs no key for the endpoint used here. This app makes one kind of request, in `providers.js`:
 
@@ -150,7 +168,10 @@ The mapping from TVmaze's response to the app's format:
 
 **Rate limit.** TVmaze documents a limit of roughly 20 requests per 10 seconds per IP address. A deck needs at most 4 requests, so normal use stays far below it.
 
-## The database
+## Data persistence: SQLite
+
+The app stores **what you swiped and the details of those shows**, locally in `data/swipes.db` (git-ignored). SQLite needs no separate server and is built into Node, and keeping the show details means the Liked/Passed lists work without calling TVmaze again. TVmaze results that you haven't swiped are not stored.
+
 
 SQLite through Node's built-in `node:sqlite` (`DatabaseSync`). It uses WAL journal mode.
 
@@ -199,10 +220,23 @@ The random term keeps the deck from collapsing into a single genre. With no swip
 - **Undo:** it calls `DELETE /api/swipe/:id` and puts the title back on top of the deck.
 - **API calls:** a small `api()` helper wraps `fetch` for every request.
 
-## Limitations
+## Learning
+
+- **Separating the data source from the app.** All TVmaze-specific code lives in `providers.js`, which maps the API response into the app's own title format. The server, database and frontend never see TVmaze's format, so another source could be added in one file.
+- **SQL safety and constraints.** I used prepared statements with `?` placeholders for every query that takes user input, and a `CHECK` constraint so the database itself rejects invalid decisions.
+- **Challenge: a secret in Git history.** An early `test.py` for a different TV API contained a hardcoded API key. Deleting the file in a later commit was not enough, because the key stayed in the history. When this project was merged into the course repository, the file was removed from every commit, and the key has to be revoked at the provider. Now I keep keys in environment variables and check `git log` before publishing.
+- **Challenge: a smooth swipe on mouse and touch.** Pointer events (`pointerdown/move/up` with `setPointerCapture`) handle both with one code path. A threshold of 100 px separates a swipe from an accidental drag.
+
+## Limitations and assistance
+
+**Limitations**
 
 - There is no user system, so one database file means one person.
 - The server trusts the title object sent by the browser in `POST /api/swipe`. For a multi-user app, it should store only the title id and look up the details itself.
 - The server loads every swiped id on each deck request. That is fine for thousands of swipes but not for millions.
 - Random pages can repeat, and the app has no server-side cache of TVmaze responses.
 - TVmaze has no movies. The `kind` filter and `hasMovies` flag are there so a movie source could be added later in `providers.js`.
+
+**Assistance**
+- Data: [TVmaze API](https://www.tvmaze.com/api) (CC BY-SA). Show images and summaries belong to TVmaze and their owners.
+- AI: Claude Code (Anthropic) was used to merge this project into the course repository, remove the leaked key from Git history, run the publication audit (see [AUDIT.md](AUDIT.md)), bind the server to localhost by default and add the Setup, User interaction, Learning and Assistance sections of this README.
