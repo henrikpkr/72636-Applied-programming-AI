@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Markdownify AI",
+  "version": "0.1.0",
+  "description": "Convert files to Markdown locally.",
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
+

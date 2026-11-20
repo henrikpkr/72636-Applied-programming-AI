@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Markdownify AI</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <h2>Markdownify AI</h2>
+
+  <div id="dropzone">
+    Drop file here
+  </div>
+
+  <input type="file" id="fileInput" />
+
+  <textarea
+    id="output"
+    placeholder="Markdown output..."
+  ></textarea>
+
+  <div class="buttons">
+    <button id="copyBtn">Copy</button>
+    <button id="downloadBtn">Download .md</button>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>
