@@ -222,10 +222,10 @@ The random term keeps the deck from collapsing into a single genre. With no swip
 
 ## Learning
 
-- **Separating the data source from the app.** All TVmaze-specific code lives in `providers.js`, which maps the API response into the app's own title format. The server, database and frontend never see TVmaze's format, so another source could be added in one file.
-- **SQL safety and constraints.** I used prepared statements with `?` placeholders for every query that takes user input, and a `CHECK` constraint so the database itself rejects invalid decisions.
-- **Challenge: a secret in Git history.** An early `test.py` for a different TV API contained a hardcoded API key. Deleting the file in a later commit was not enough, because the key stayed in the history. When this project was merged into the course repository, the file was removed from every commit, and the key has to be revoked at the provider. Now I keep keys in environment variables and check `git log` before publishing.
-- **Challenge: a smooth swipe on mouse and touch.** Pointer events (`pointerdown/move/up` with `setPointerCapture`) handle both with one code path. A threshold of 100 px separates a swipe from an accidental drag.
+- **Broader use of API's.** While the visible outcome of this project was a movie-swiping application, my main learning was understanding the possibilities created by APIs. Before the project, I had limited practical experience retrieving data from an external service and integrating it into an application. Working with an API showed me that a relatively simple product can access a large amount of structured data without requiring the developer to create the dataset independently. This sparked my interest in exploring what other data sources are freely available. After the project, I cloned a GitHub repository of public APIs and reviewed it for data that could form the basis of useful products. **The project therefore encouraged me to approach APIs not only as technical interfaces, but also as starting points for identifying problems and developing value-creating solutions.**
+
+- **Challenge: a secret in Git history.** An early `test.py` for a different TV API contained a hardcoded API key. Deleting the file in a later commit was not enough, because the key stayed in the history. When this project was merged into the course repository, the file was removed from every commit, and the key has to be revoked at the provider. Now I keep keys in environment variables and check `git log` before publishing. The inital repository is private and the key rotated. 
+
 
 ## Limitations and assistance
 
@@ -239,4 +239,4 @@ The random term keeps the deck from collapsing into a single genre. With no swip
 
 **Assistance**
 - Data: [TVmaze API](https://www.tvmaze.com/api) (CC BY-SA). Show images and summaries belong to TVmaze and their owners.
-- AI: Claude Code (Anthropic) was used to merge this project into the course repository, remove the leaked key from Git history, run the publication audit (see [AUDIT.md](AUDIT.md)), bind the server to localhost by default and add the Setup, User interaction, Learning and Assistance sections of this README.
+- AI: Claude Code (Anthropic) was used to merge this project into the course repository, remove the leaked key from Git history, run the publication audit (see [AUDIT.md](AUDIT.md)), bind the server to localhost by default and add the Setup, User interaction  sections of this README.

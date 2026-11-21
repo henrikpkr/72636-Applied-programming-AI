@@ -19,7 +19,7 @@ Audit performed with Claude Code (Anthropic) using the course audit prompt, from
 | --- | --- | --- | --- |
 | 1 | README told users to `cp .env.local.example .env.local`, but that file didn't exist | `dashboard/` | **Fixed.** Added `dashboard/.env.local.example` with placeholder values |
 | 2 | No configuration template for the scraper (the README created `.env` with a heredoc) | project root | **Fixed.** Added `.env.example` with placeholders and changed the README to `cp .env.example .env` |
-| 3 | README was missing the Learning and Limitations/assistance sections, a screenshot and an explicit data persistence section | `README.md` | **Fixed.** Added all required sections and `docs/screenshot-dashboard.png` |
+| 3 | README was missing the Learning and Limitations/assistance sections, a screenshot and an explicit data persistence section | `README.md` | **Fixed.** Added all required sections apart from learning as this is the students input and `docs/screenshot-dashboard.png` |
 
 ### Recommended improvements
 

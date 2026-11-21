@@ -25,3 +25,4 @@ cd 72636-Applied-programming-AI
 
 - Projects 2 and 3 were developed in separate repositories and merged in here with their commit history (`git log` shows the original commits). Project 1 was not under version control before and was added as a new commit.
 - No secrets are committed. Configuration templates are in the `*.example` files. See each project's `AUDIT.md` for what was checked, what was found and what was fixed.
+- My greatest learning in this course came from **job-hunting, Polymarket, trading strategies, and using JEV** for the first time. I am still developing some of these ideas, so they are works in progress rather than finished projects. The discussions with the professor widened our horizon. 

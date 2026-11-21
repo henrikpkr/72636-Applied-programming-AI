@@ -142,11 +142,9 @@ Note: books.toscrape.com has no author or publication-year data, so those statis
 Python · Next.js · Recharts · `requests` · `BeautifulSoup4` · `supabase-py` · `python-dotenv` · Supabase (PostgreSQL + Storage + PostgREST)
 
 ## Learning
+- Although the technical complexity of the project was limited relative to my existing experience (I am a business analytics student who is familiar with AI), it still produced an important learning outcome. The greatest value came from considering how freely available data can be transformed into something useful. Scraping the book data raised questions about who could benefit from the dataset, what additional value could be created through cleaning or enrichment, and whether this value could support a sustainable business model. The project therefore reinforced the importance of starting with problem discovery rather than with a technology. I learned that the ability to collect data is only the first step; the more important challenge is identifying a specific user problem, a differentiated value proposition, and a feasible way of delivering that value.
+- **Challenge: Supabase access.**A major difficulty was that the scraper appeared to run correctly, but the data did not load properly in Supabase. At first, it was unclear whether the problem was caused by the scraping logic or the database setup. I discussed it with AI and eventually had to setup a new database.  Solving the issue taught me to break the process into smaller steps, verify the scraped output before uploading it, and check the database connection and table configuration independently.
 
-- **Encoding.** The site sends no charset header, so `requests` falls back to ISO-8859-1 and the pound sign turns into mojibake (`Â£`). Setting `resp.encoding = "utf-8"` in `get_soup()` fixes it.
-- **Idempotent writes.** A plain insert would create duplicates every time the scraper is re-run. Using the UPC as the primary key and `upsert(..., on_conflict="upc")` makes it safe to re-run at any time.
-- **Supabase keys and RLS.** The `anon` key is meant to be public, and Row Level Security decides what it can do. The `service_role` key bypasses RLS and must stay secret. I enabled RLS with a read-only policy so the dashboard and API can use the anon key safely.
-- **Challenge: the 1000-row limit.** Supabase returns at most 1000 rows per request, so a single query would silently cut off the catalogue. The dashboard solves this by paging with `.range(from, from + 999)` until a page comes back short (`getBooks()` in `dashboard/app/page.js`).
 
 ## Limitations and assistance
 
@@ -160,4 +158,4 @@ Python · Next.js · Recharts · `requests` · `BeautifulSoup4` · `supabase-py`
 
 **Assistance**
 - Libraries: requests, BeautifulSoup4, supabase-py, python-dotenv, Next.js, Recharts, supabase-js.
-- AI: Claude Code (Anthropic) was used to merge this project into the course repository, run the publication audit (see [AUDIT.md](AUDIT.md)), add the configuration templates and draft the README sections for purpose, persistence, learning and limitations.
+- AI: Claude Code (Anthropic) was used to merge this project into the course repository, run the publication audit (see [AUDIT.md](AUDIT.md)), add the configuration templates and draft the README sections for purpose, persistence, and limitations. Learning section was completed without assistance. 

@@ -1,6 +1,6 @@
 # Markdownify Tab: browser extension
 
-A Chrome extension (Manifest V3) that replaces the new tab page with a calm personal dashboard, inspired by Momentum Dash, and adds my own productivity tool to it: a converter that turns local files into Markdown.
+A Chrome extension (Manifest V3) that replaces the new tab page with a calm personal dashboard, inspired by Momentum Dash, and adds my own productivity tool to it: **a converter that turns local files into Markdown.**
 
 ![New tab page with the Markdown converter and to-do panels open](docs/screenshot-newtab.png)
 
@@ -86,10 +86,9 @@ npm run build        # outputs the extension to dist/
 
 ## Learning
 
-- **Manifest V3 restrictions.** MV3 extensions may not load remote code, so pdf.js cannot come from a CDN. Vite bundles the libraries and the pdf.js worker into `dist/` (see the comment in `converters/pdf.js`).
-- **Sharing code between two pages.** The popup and the new tab page both need the converter. Instead of copying the logic, I moved it into `converters/index.js` as `convertFile()` and `mountConverter()`, and both pages call it with their own elements.
+- **Creating chrome extensions.** The Chrome extension project provided the strongest technical learning experience for me because I had never built a browser extension before. I learned how the different components of an extension interact and how a relatively simple idea can be integrated directly into a user’s browser. More importantly, the project taught me how to approach problems: discussing ideas with AI allows me to create solutions that might not be the billion-dollar idea but they can improve my productivity at very low cost. This gave me greater confidence in my ability to independently explore new technologies and translate an initial idea into a functional product.
+-  **Challenge: Import to chrome did not work as planned.** Initially, I placed the manifest.json file in the wrong folder, which prevented Chrome from loading the extension. I also learned that npm packages cannot always be imported directly into a Chrome extension and may require a build tool such as Vite. Working through these issues improved my debugging skills and taught me to pay closer attention to project structure, error messages, and the environment in which my code runs.
 - **Challenge: CSV edge cases.** When I audited the project, I found that a CSV cell containing `|` broke the Markdown table, and that a trailing newline produced an empty row. I fixed both by escaping cell content and using Papa Parse's `skipEmptyLines`.
-- **Challenge: "daily" features without a server.** The focus and the background must change at midnight. I store the focus together with its date (`YYYY-MM-DD` in local time) and ignore it when the date no longer matches. The background and quote are picked from the day number, so no state is needed.
 
 ## Limitations and assistance
 
@@ -104,4 +103,4 @@ npm run build        # outputs the extension to dist/
 **Assistance**
 - Libraries: [pdf.js](https://mozilla.github.io/pdf.js/), [mammoth](https://github.com/mwilliamson/mammoth.js), [turndown](https://github.com/mixmark-io/turndown), [Papa Parse](https://www.papaparse.com/), [Vite](https://vitejs.dev/).
 - The dashboard's features are modelled on [Momentum Dash](https://momentumdash.com/). No Momentum code, images or text were used.
-- AI: Claude Code (Anthropic) was used to build the new tab dashboard, refactor the shared converter module, fix the CSV converter, run the publication audit (see [AUDIT.md](AUDIT.md)) and draft this README.
+- AI: Microsoft Copilot was used to brainstorm ideas. Claude Code (Anthropic) was used to build the new tab dashboard, refactor the shared converter module, fix the CSV converter, run the publication audit (see [AUDIT.md](AUDIT.md)) and draft this README.
