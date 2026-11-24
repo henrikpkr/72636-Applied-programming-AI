@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
+# Env / secrets
+.env
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# Data (scraped results, credentials-adjacent)
+data/*
+!data/.gitkeep
+backend/data/*
+!backend/data/seed_jobs.json
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

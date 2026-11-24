@@ -1,0 +1,396 @@
+import sqlite3
+
+from fastapi.testclient import TestClient
+
+from jobhunter.api import candidate_routes, routes
+from jobhunter.jobs.schema import Job, JobSkill
+from jobhunter.main import app
+from jobhunter.models.job import EmploymentType, JobPosting
+
+client = TestClient(app)
+
+_CV_TEXT = """Jane Doe
+jane.doe@example.com
+
+EXPERIENCE
+Senior Data Analyst, Acme Analytics Inc.
+Jan 2020 - Present
+- Built Power BI dashboards used by 200 users
+
+SKILLS
+Python, SQL, Power BI
+
+LANGUAGES
+English (Native)
+"""
+
+
+def _seed_one_job() -> None:
+    candidate_routes.jobs_repository.upsert_job(
+        Job(
+            job_id="api-test-job-1",
+            title="Senior Data Analyst",
+            normalized_title="Senior Data Analyst",
+            company="Acme Analytics Inc.",
+            industry="technology",
+            function="analytics",
+            location="Remote",
+            remote_type="remote",
+            employment_type="full_time",
+            seniority="senior",
+            description="Own analytics for the growth org.",
+            skills=[JobSkill(name="Python", normalized_name="Python", is_must_have=True)],
+        )
+    )
+    from jobhunter.matching.semantic import build_corpus_stats
+    document_frequency, document_count = build_corpus_stats(candidate_routes.jobs_repository.all_job_texts())
+    candidate_routes.jobs_repository.save_corpus_stats(document_frequency, document_count)
+
+
+def test_upload_candidate_cv_returns_structured_profile():
+    response = client.post(
+        "/api/candidates/upload-file",
+        files={"cv_file": ("cv.txt", _CV_TEXT.encode(), "text/plain")},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["full_name"] == "Jane Doe"
+    assert any(skill["normalized_name"].lower() == "python" for skill in body["skills"])
+    assert body["profile_id"]
+
+
+def test_upload_candidate_cv_rejects_empty_file():
+    response = client.post(
+        "/api/candidates/upload-file",
+        files={"cv_file": ("cv.txt", b"", "text/plain")},
+    )
+    assert response.status_code == 400
+
+
+def test_get_candidate_profile_roundtrip():
+    upload = client.post(
+        "/api/candidates/upload-file",
+        files={"cv_file": ("cv.txt", _CV_TEXT.encode(), "text/plain")},
+    )
+    profile_id = upload.json()["profile_id"]
+
+    fetched = client.get(f"/api/candidates/{profile_id}")
+    assert fetched.status_code == 200
+    assert fetched.json()["profile_id"] == profile_id
+
+
+def test_get_candidate_profile_missing_returns_404():
+    response = client.get("/api/candidates/does-not-exist")
+    assert response.status_code == 404
+
+
+def test_update_candidate_profile_allows_correction():
+    upload = client.post(
+        "/api/candidates/upload-file",
+        files={"cv_file": ("cv.txt", _CV_TEXT.encode(), "text/plain")},
+    )
+    profile = upload.json()
+    profile["full_name"] = "Jane A. Doe"
+
+    response = client.put(f"/api/candidates/{profile['profile_id']}", json=profile)
+    assert response.status_code == 200
+    assert response.json()["full_name"] == "Jane A. Doe"
+
+    refetched = client.get(f"/api/candidates/{profile['profile_id']}")
+    assert refetched.json()["full_name"] == "Jane A. Doe"
+
+
+def test_run_match_and_fetch_run():
+    _seed_one_job()
+    upload = client.post(
+        "/api/candidates/upload-file",
+        files={"cv_file": ("cv.txt", _CV_TEXT.encode(), "text/plain")},
+    )
+    profile_id = upload.json()["profile_id"]
+
+    match_response = client.post(f"/api/candidates/{profile_id}/match", json={"top_k": 5})
+    assert match_response.status_code == 200
+    run = match_response.json()
+    assert run["profile_id"] == profile_id
+    assert run["results"]
+
+    fetched_run = client.get(f"/api/match-runs/{run['run_id']}")
+    assert fetched_run.status_code == 200
+    assert fetched_run.json()["run_id"] == run["run_id"]
+
+
+def test_match_missing_profile_returns_404():
+    response = client.post("/api/candidates/does-not-exist/match", json={})
+    assert response.status_code == 404
+
+
+def test_list_jobs_returns_seeded_job():
+    _seed_one_job()
+    response = client.get("/api/jobs", params={"remote_type": "remote"})
+    assert response.status_code == 200
+    job_ids = {job["job_id"] for job in response.json()}
+    assert "api-test-job-1" in job_ids
+
+
+def _fake_fetch_postings(postings, source_counts):
+    def fetch(profile, criteria):
+        return postings, source_counts
+
+    return fetch
+
+
+def test_unified_search_without_profile_uses_keyword_ranking_and_stores_postings(monkeypatch):
+    monkeypatch.setattr(
+        routes.orchestrator,
+        "fetch_postings",
+        _fake_fetch_postings(
+            [
+                JobPosting(
+                    source="stub",
+                    title="Senior Data Analyst",
+                    company="Acme",
+                    location="Berlin",
+                    employment_type=EmploymentType.FULL_TIME,
+                    description="Analyze data for the growth team.",
+                    url="https://example.com/jobs/unified-1",
+                )
+            ],
+            {"stub": 1},
+        ),
+    )
+
+    response = client.post(
+        "/api/search",
+        json={"role": "Senior Data Analyst", "sources": ["stub"], "limit": 5},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["used_profile"] is False
+    assert body["source_status"] == [{"source": "stub", "status": "ok", "count": 1}]
+    assert body["results"]
+    assert body["results"][0]["overall_fit"] > 0
+    assert body["results"][0]["subscores"] == {}
+
+    # The posting from this request's fetch should now be in the jobs database, not just returned.
+    from jobhunter.jobs.from_posting import _job_id_for_url
+
+    job_id = _job_id_for_url("https://example.com/jobs/unified-1")
+    assert candidate_routes.jobs_repository.get_job(job_id) is not None
+
+    # The run and its raw postings should also be recorded for the discovered-jobs audit log.
+    run_id = body["run_id"]
+    stored_run = routes.repository.get_search_run(run_id)
+    assert stored_run is not None
+    assert stored_run.run_id == run_id
+
+    with sqlite3.connect(routes.repository._database_path) as conn:
+        discovered_count = conn.execute(
+            "SELECT COUNT(*) FROM discovered_jobs WHERE run_id = ?", (run_id,)
+        ).fetchone()[0]
+    assert discovered_count == 1
+
+
+def test_unified_search_with_profile_uses_matching_engine(monkeypatch):
+    monkeypatch.setattr(
+        routes.orchestrator,
+        "fetch_postings",
+        _fake_fetch_postings(
+            [
+                JobPosting(
+                    source="stub",
+                    title="Senior Data Analyst",
+                    company="Acme Analytics Inc.",
+                    location="Remote",
+                    is_remote=True,
+                    employment_type=EmploymentType.FULL_TIME,
+                    description="Own analytics for the growth org.",
+                    url="https://example.com/jobs/unified-2",
+                )
+            ],
+            {"stub": 1},
+        ),
+    )
+    upload = client.post(
+        "/api/candidates/upload-file",
+        files={"cv_file": ("cv.txt", _CV_TEXT.encode(), "text/plain")},
+    )
+    profile_id = upload.json()["profile_id"]
+
+    response = client.post(
+        "/api/search",
+        json={"candidate_profile_id": profile_id, "role": "Data Analyst", "sources": ["stub"], "limit": 5},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["used_profile"] is True
+    assert body["results"]
+    # subscores are only populated by the real matching engine, not the keyword-ranking fallback.
+    assert body["results"][0]["subscores"]
+
+
+def _tracking_fetch_postings(postings_by_location=None, default_postings=None, default_counts=None):
+    """Records every `criteria.location` it's called with -- lets a test prove
+    fetch_postings_for_locations actually issued one real call per selected country."""
+    seen_locations = []
+
+    def fetch(profile, criteria):
+        seen_locations.append(criteria.location)
+        if postings_by_location and criteria.location in postings_by_location:
+            return postings_by_location[criteria.location], {"stub": 1}
+        return default_postings or [], default_counts or {"stub": 0}
+
+    fetch.seen_locations = seen_locations
+    return fetch
+
+
+def test_unified_search_with_countries_queries_each_country_live(monkeypatch):
+    fake_fetch = _tracking_fetch_postings(
+        postings_by_location={
+            "Germany": [
+                JobPosting(
+                    source="stub", title="Engineer DE", company="Acme DE", location="Berlin, Germany",
+                    employment_type=EmploymentType.FULL_TIME, description="Role in Germany.",
+                    url="https://example.com/jobs/country-de",
+                )
+            ],
+            "France": [
+                JobPosting(
+                    source="stub", title="Engineer FR", company="Acme FR", location="Paris, France",
+                    employment_type=EmploymentType.FULL_TIME, description="Role in France.",
+                    url="https://example.com/jobs/country-fr",
+                )
+            ],
+        }
+    )
+    monkeypatch.setattr(routes.orchestrator, "fetch_postings", fake_fetch)
+
+    response = client.post(
+        "/api/search",
+        json={"role": "Engineer", "sources": ["stub"], "countries": ["Germany", "France"], "limit": 10},
+    )
+
+    assert response.status_code == 200
+    assert fake_fetch.seen_locations == ["Germany", "France"]
+    job_ids = {result["job_id"] for result in response.json()["results"]}
+    from jobhunter.jobs.from_posting import _job_id_for_url
+    assert _job_id_for_url("https://example.com/jobs/country-de") in job_ids
+    assert _job_id_for_url("https://example.com/jobs/country-fr") in job_ids
+
+
+def test_unified_search_with_region_expands_to_its_countries(monkeypatch):
+    fake_fetch = _tracking_fetch_postings()
+    monkeypatch.setattr(routes.orchestrator, "fetch_postings", fake_fetch)
+
+    response = client.post(
+        "/api/search",
+        json={"role": "Engineer", "sources": ["stub"], "regions": ["Iberia"], "limit": 10},
+    )
+
+    assert response.status_code == 200
+    assert sorted(fake_fetch.seen_locations) == ["Portugal", "Spain"]
+
+
+def test_get_search_metadata_returns_regions_industries_and_languages():
+    response = client.get("/api/search-metadata")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "Iberia" in body["regions"]
+    assert sorted(body["regions"]["Iberia"]) == ["Portugal", "Spain"]
+    assert "consulting" in body["industries"]
+    assert "German" in body["languages"]
+
+
+def test_unified_search_missing_profile_returns_404(monkeypatch):
+    monkeypatch.setattr(routes.orchestrator, "fetch_postings", _fake_fetch_postings([], {}))
+
+    response = client.post(
+        "/api/search",
+        json={"candidate_profile_id": "does-not-exist", "role": "Engineer"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_set_job_feedback_like_then_clear():
+    _seed_one_job()
+    job_id = "api-test-job-1"
+    try:
+        liked = client.put(f"/api/jobs/{job_id}/feedback", json={"rating": "like"})
+        assert liked.status_code == 200
+        assert liked.json() == {"job_id": job_id, "rating": "like"}
+        assert candidate_routes.jobs_repository.get_job_feedback(job_id) == "like"
+
+        all_feedback = client.get("/api/jobs/feedback")
+        assert all_feedback.status_code == 200
+        assert all_feedback.json().get(job_id) == "like"
+
+        cleared = client.put(f"/api/jobs/{job_id}/feedback", json={"rating": None})
+        assert cleared.status_code == 200
+        assert cleared.json() == {"job_id": job_id, "rating": None}
+        assert candidate_routes.jobs_repository.get_job_feedback(job_id) is None
+    finally:
+        candidate_routes.jobs_repository.set_job_feedback(job_id, None)
+
+
+def test_set_job_feedback_missing_job_returns_404():
+    response = client.put("/api/jobs/does-not-exist/feedback", json={"rating": "like"})
+    assert response.status_code == 404
+
+
+def test_unified_search_boosts_jobs_sharing_a_liked_skill(monkeypatch):
+    """Liking a job with the 'rust' skill should raise the score of a *different* job that
+    shares that skill on a later search, and leave an unrelated job's score untouched — proving
+    the preference bonus generalizes from what was liked rather than just re-surfacing it."""
+    from jobhunter.jobs.from_posting import _job_id_for_url
+
+    postings = [
+        JobPosting(
+            source="stub", title="Platform Engineer", company="Acme Pref Test",
+            location="Berlin", employment_type=EmploymentType.FULL_TIME,
+            description="We build cloud infrastructure and tooling with Rust.",
+            url="https://example.com/jobs/pref-test-a",
+        ),
+        JobPosting(
+            source="stub", title="Platform Engineer", company="Acme Pref Test",
+            location="Berlin", employment_type=EmploymentType.FULL_TIME,
+            description="We build cloud infrastructure and tooling.",
+            url="https://example.com/jobs/pref-test-b",
+        ),
+    ]
+    monkeypatch.setattr(routes.orchestrator, "fetch_postings", _fake_fetch_postings(postings, {"stub": 2}))
+
+    job_a_id = _job_id_for_url("https://example.com/jobs/pref-test-a")
+    job_b_id = _job_id_for_url("https://example.com/jobs/pref-test-b")
+
+    baseline = client.post("/api/search", json={"role": "Platform Engineer", "sources": ["stub"], "limit": 5})
+    assert baseline.status_code == 200
+    baseline_by_id = {r["job_id"]: r for r in baseline.json()["results"]}
+    baseline_score_a = baseline_by_id[job_a_id]["overall_fit"]
+    baseline_score_b = baseline_by_id[job_b_id]["overall_fit"]
+
+    liked_job_id = "pref-test-liked-rust-job"
+    candidate_routes.jobs_repository.upsert_job(
+        Job(
+            job_id=liked_job_id,
+            title="Systems Programmer",
+            normalized_title="Systems Programmer",
+            company="RustCo",
+            skills=[JobSkill(name="Rust", normalized_name="Rust", is_must_have=False)],
+        )
+    )
+    try:
+        liked = client.put(f"/api/jobs/{liked_job_id}/feedback", json={"rating": "like"})
+        assert liked.status_code == 200
+
+        boosted = client.post("/api/search", json={"role": "Platform Engineer", "sources": ["stub"], "limit": 5})
+        assert boosted.status_code == 200
+        boosted_by_id = {r["job_id"]: r for r in boosted.json()["results"]}
+
+        assert boosted_by_id[job_a_id]["overall_fit"] > baseline_score_a
+        assert any("liked" in reason for reason in boosted_by_id[job_a_id]["match_reasons"])
+        assert boosted_by_id[job_b_id]["overall_fit"] == baseline_score_b
+    finally:
+        candidate_routes.jobs_repository.set_job_feedback(liked_job_id, None)
