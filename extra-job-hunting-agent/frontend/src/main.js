@@ -403,7 +403,7 @@ function renderCandidateSummary(profile) {
   const extraHtml = manualEntries.map(({ entry, index }) => `<div class="cm-exp-entry-row"><select class="cm-exp-type-select" data-exp-index="${index}">${employmentOptions(entry.employment_type)}</select><div class="cm-years-field"><input type="number" class="cm-exp-years-input" data-exp-index="${index}" min="0" step="0.1" value="${entry.duration_months ? Math.round((entry.duration_months / 12) * 10) / 10 : ''}" placeholder="0" /><span>yrs</span></div><button type="button" class="cm-tag-remove" data-exp-index-remove="${index}" aria-label="Remove entry">×</button></div>`).join('')
 
   summary.innerHTML = `
-    <strong>${profile.full_name || 'Unnamed candidate'}</strong>${profile.headline ? `<span>${profile.headline}</span>` : ''}
+    <strong>${escapeHtml(profile.full_name || 'Unnamed candidate')}</strong>${profile.headline ? `<span>${escapeHtml(profile.headline)}</span>` : ''}
     <div class="cm-subsection">
       <h5>Experience</h5>
       <div class="cm-exp-row">
@@ -592,13 +592,21 @@ function summarizeDescription(description) {
   return `${truncated.slice(0, cutAt > 0 ? cutAt : CARD_DESCRIPTION_MAX_CHARS)}…`
 }
 
+// Only http(s) links from job sources are rendered, so a javascript: URL cannot run.
+function safeUrl(url) {
+  try {
+    const parsed = new URL(url)
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.href : ''
+  } catch { return '' }
+}
+
 function renderResultCard(result, index) {
   const rank = String(index + 1).padStart(2, '0')
   const job = state.jobsById[result.job_id]
   const summary = summarizeDescription(job && job.description)
   const rating = state.feedbackByJobId[result.job_id] || null
   const feedbackHtml = `<div class="job-card-actions"><button type="button" class="feedback-btn like-btn${rating === 'like' ? ' is-active' : ''}" data-job-id="${result.job_id}" data-rating="like" aria-label="Like this job" aria-pressed="${rating === 'like'}">👍</button><button type="button" class="feedback-btn dislike-btn${rating === 'dislike' ? ' is-active' : ''}" data-job-id="${result.job_id}" data-rating="dislike" aria-label="Dislike this job" aria-pressed="${rating === 'dislike'}">👎</button></div>`
-  return `<article class="job-card" data-job-id="${result.job_id}"><div class="job-card-top"><span class="rank">${rank}</span><span class="match-score">${Math.round(result.overall_fit)}% match</span></div>${feedbackHtml}<span class="source">${job ? job.source || job.company : result.job_id}</span><h4>${job ? job.title : 'Job details unavailable'}</h4>${job ? `<p class="company">${job.company} <span>·</span> ${job.location || 'Unspecified'}</p>` : ''}${job ? `<div class="job-tags"><span>${job.remote_type === 'remote' ? 'Remote' : job.location || 'Unspecified'}</span><span>${(job.employment_type || '').replace('_', ' ')}</span></div>` : ''}${summary ? `<p class="job-description">${escapeHtml(summary)}</p>` : ''}${job && job.url ? `<a class="open-job" href="${job.url}" target="_blank" rel="noreferrer">Open posting ↗</a>` : ''}</article>`
+  return `<article class="job-card" data-job-id="${result.job_id}"><div class="job-card-top"><span class="rank">${rank}</span><span class="match-score">${Math.round(result.overall_fit)}% match</span></div>${feedbackHtml}<span class="source">${escapeHtml(job ? job.source || job.company : result.job_id)}</span><h4>${job ? escapeHtml(job.title) : 'Job details unavailable'}</h4>${job ? `<p class="company">${escapeHtml(job.company)} <span>·</span> ${escapeHtml(job.location || 'Unspecified')}</p>` : ''}${job ? `<div class="job-tags"><span>${job.remote_type === 'remote' ? 'Remote' : escapeHtml(job.location || 'Unspecified')}</span><span>${escapeHtml((job.employment_type || '').replace('_', ' '))}</span></div>` : ''}${summary ? `<p class="job-description">${escapeHtml(summary)}</p>` : ''}${job && safeUrl(job.url) ? `<a class="open-job" href="${escapeHtml(safeUrl(job.url))}" target="_blank" rel="noreferrer">Open posting ↗</a>` : ''}</article>`
 }
 
 function renderPagination(totalItems) {
@@ -761,7 +769,7 @@ function renderLikedJobCard(jobId) {
   const job = state.jobsById[jobId]
   const summary = summarizeDescription(job && job.description)
   const feedbackHtml = `<div class="job-card-actions"><button type="button" class="feedback-btn like-btn is-active" data-job-id="${jobId}" data-rating="like" aria-label="Unlike this job" aria-pressed="true">👍</button><button type="button" class="feedback-btn dislike-btn" data-job-id="${jobId}" data-rating="dislike" aria-label="Dislike this job" aria-pressed="false">👎</button></div>`
-  return `<article class="job-card" data-job-id="${jobId}"><div class="job-card-top"><span class="source">${job ? job.source || job.company : jobId}</span></div>${feedbackHtml}<h4>${job ? job.title : 'Job details unavailable'}</h4>${job ? `<p class="company">${job.company} <span>·</span> ${job.location || 'Unspecified'}</p>` : ''}${job ? `<div class="job-tags"><span>${job.remote_type === 'remote' ? 'Remote' : job.location || 'Unspecified'}</span><span>${(job.employment_type || '').replace('_', ' ')}</span></div>` : ''}${summary ? `<p class="job-description">${escapeHtml(summary)}</p>` : ''}${job && job.url ? `<a class="open-job" href="${job.url}" target="_blank" rel="noreferrer">Open posting ↗</a>` : ''}</article>`
+  return `<article class="job-card" data-job-id="${jobId}"><div class="job-card-top"><span class="source">${escapeHtml(job ? job.source || job.company : jobId)}</span></div>${feedbackHtml}<h4>${job ? escapeHtml(job.title) : 'Job details unavailable'}</h4>${job ? `<p class="company">${escapeHtml(job.company)} <span>·</span> ${escapeHtml(job.location || 'Unspecified')}</p>` : ''}${job ? `<div class="job-tags"><span>${job.remote_type === 'remote' ? 'Remote' : escapeHtml(job.location || 'Unspecified')}</span><span>${escapeHtml((job.employment_type || '').replace('_', ' '))}</span></div>` : ''}${summary ? `<p class="job-description">${escapeHtml(summary)}</p>` : ''}${job && safeUrl(job.url) ? `<a class="open-job" href="${escapeHtml(safeUrl(job.url))}" target="_blank" rel="noreferrer">Open posting ↗</a>` : ''}</article>`
 }
 
 function renderLikedJobs() {

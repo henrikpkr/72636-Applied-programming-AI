@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 *.egg-info/
+.pytest_cache/
 
 # Env / secrets
 .env
@@ -12,11 +13,17 @@ node_modules/
 dist/
 build/
 
-# Data (scraped results, credentials-adjacent)
+# Data: the SQLite database stores uploaded CV text (personal data), never commit it
 data/*
 !data/.gitkeep
 backend/data/*
 !backend/data/seed_jobs.json
+backend/output/
+*.db
+*.sqlite3
+
+# Local tool settings
+.claude/
 
 # OS / editor
 .DS_Store

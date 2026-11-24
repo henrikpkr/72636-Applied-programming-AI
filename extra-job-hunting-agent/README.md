@@ -1,154 +1,115 @@
-# Frontend
+# Job Hunting Agent (extra work, not one of the three graded projects)
 
-Small Vite UI for uploading a CV, configuring a job search, and reviewing ranked results.
+> **Extra work.** This project goes beyond the three required course projects. It is included because it is where I learned the most (see the root README), and it follows the same submission requirements: README, `AUDIT.md`, configuration template and screenshot.
+>
+> **Group work.** Built together with Luca Isaak (12 of the commits in this history are his, 3 come from the GitHub Copilot coding agent). It was developed in a separate repository and merged in here with its history.
 
-## Run locally
+![Search results ranked against an uploaded CV](docs/screenshot-results.png)
 
-Prerequisites:
+*Screenshot: the results screen after uploading the fake test CV `backend/tests/fixtures/cvs/analytics_intern.txt` and searching for "Data Analyst". Cards show the match score, source, a like/dislike button and a link to the original posting.*
 
-- Python 3.11 or newer
-- Node.js and npm
+## Purpose
 
-Use two terminals. Run the backend first.
+A web app that helps someone find jobs that fit their CV. You upload a CV (PDF, DOCX or text). The app extracts a structured profile from it (skills, work history, seniority, languages, education), searches several public job APIs live, and ranks every posting against the profile with an explainable score from 0 to 100. You can correct the extracted profile, filter by region, country, language, industry, seniority and remote type, and like or dislike jobs.
 
-### 1. Start the backend
+A background "health monitor" agent checks every job source on a timer. When a source breaks (for example because an API changed), it can ask Claude to diagnose the error and propose a fix to the scraper code, which a human reviews before it is applied.
 
-From the repository root:
+## Data collection
+
+All job data comes from public APIs, called live when you run a search (`backend/src/jobhunter/scrapers/`):
+
+| Source | Needs a key | What it returns |
+|---|---|---|
+| [Arbeitnow](https://www.arbeitnow.com/api/job-board-api) | No | Jobs in Germany and remote jobs |
+| [Bundesagentur für Arbeit](https://jobsuche.api.bund.dev/) | No (uses the publicly documented client id) | The German federal employment agency's job search |
+| [Greenhouse](https://developers.greenhouse.io/job-board.html) and [Lever](https://github.com/lever/postings-api) company boards | No | Open roles at selected companies, picked by the industries found in the CV |
+| [Adzuna](https://developer.adzuna.com/) | Yes (free) | Broad job market search, only used when `ADZUNA_APP_ID`/`ADZUNA_APP_KEY` are set |
+| Jooble, EURES | Yes | Only used when endpoint and key are configured |
+
+The candidate data comes from the CV the user uploads. Text is read with PyMuPDF (PDF), from the DOCX XML, or with Tesseract OCR for scanned PDFs. A rule-based extractor turns it into a profile. If `ANTHROPIC_API_KEY` is set, an extra Claude pass improves the extraction. Without a key, the app falls back to the rules alone.
+
+`backend/data/seed_jobs.json` holds 31 hand-written sample postings for the offline matcher and the tests.
+
+## Data persistence
+
+Everything is stored in one local SQLite file, `backend/data/jobhunter.sqlite3` (path configurable with `JOBHUNTER_DB_PATH`). It is created on first start.
+
+| What | Tables | Why |
+|---|---|---|
+| Uploaded CV text and the extracted profile | `profiles`, `candidates`, `candidate_profiles` | So the user can edit the profile and search again without uploading again |
+| Jobs found by searches and the seed jobs, with skills and languages | `jobs`, `job_skills`, `job_languages`, `job_certifications`, `discovered_jobs` | To rank, deduplicate and show job details |
+| TF-IDF statistics | `corpus_stats`, `corpus_meta` | For the semantic similarity part of the score |
+| Search and match runs | `search_runs`, `match_runs` | So a past run can be reopened by its id |
+| Likes and dislikes | `job_feedback` | They add a small bonus or penalty to similar jobs |
+| Source health and proposed fixes | `source_health` | For the health monitor screen |
+
+**The database contains personal data (the full CV text), so it is git-ignored and must never be committed.** An earlier version of this project did commit it. That copy was removed from every commit before the merge (see [AUDIT.md](AUDIT.md)). The demo login only stores the name and email you type in the browser's `localStorage`. It is not verified and not sent anywhere.
+
+## User interaction
+
+1. Open the frontend and enter a name on the demo login screen (no password is checked).
+2. Upload a CV, or press **Skip — search by role instead** to search without one.
+3. Review the extracted profile: fix seniority, years of experience, skills and languages, then continue.
+4. Set the search: role, keywords, company, industry, remote type, employment type, seniority, regions/countries, city and languages. Press **Run search**.
+5. Results come back ranked by match score, 20 per page. Each card links to the original posting. 👍/👎 saves feedback, and liked jobs appear on the profile page.
+6. The **Profile** page lists which job sources work. For a broken source, you can review the proposed fix, try it, apply it or dismiss it. **API status** in the top bar checks that the backend is reachable.
+
+The backend also has a JSON API (FastAPI docs at `http://127.0.0.1:8000/docs`), for example `POST /api/candidates/upload-file`, `POST /api/search`, `GET /api/jobs` and `GET /api/health/sources`.
+
+## Setup
+
+**Requirements:** Python 3.11+, Node.js 20.19+ and npm. Optional: Tesseract with English and German data for scanned PDFs (`brew install tesseract tesseract-lang` on macOS).
+
+**1. Backend** (first terminal):
 
 ```bash
-cd backend
+cd extra-job-hunting-agent/backend
 python3 -m venv .venv
 ./.venv/bin/python -m pip install -e '.[dev]'
+cp .env.example .env            # optional: every value can stay empty
+./.venv/bin/python scripts/load_jobs.py data/seed_jobs.json   # optional: sample jobs for the matcher
 ./.venv/bin/uvicorn jobhunter.main:app --reload --port 8000
 ```
 
-Leave this terminal running. The API is available at `http://127.0.0.1:8000`.
-
-### 2. Start the frontend
-
-In a second terminal, from the repository root:
+**2. Frontend** (second terminal):
 
 ```bash
-cd frontend
+cd extra-job-hunting-agent/frontend
 npm install
 npm run dev
 ```
 
-Open the URL printed by Vite, usually `http://127.0.0.1:5173`.
+Open http://localhost:5173. If the backend runs on another port, start Vite with `VITE_API_URL=http://127.0.0.1:<port> npm run dev`.
 
-If the backend runs on another host or port, set `VITE_API_URL` before starting Vite:
+**Configuration:** all settings are optional and documented in [`backend/.env.example`](backend/.env.example). Without any keys, the app uses Arbeitnow, Bundesagentur and the company boards with the rule-based extractor.
 
-```bash
-VITE_API_URL=http://127.0.0.1:8001 npm run dev
-```
+**Tests:** `cd backend && ./.venv/bin/python -m pytest` (241 tests, no network or API key needed).
 
-## Troubleshooting
+**Stop:** `Ctrl+C` in both terminals. If a port stays busy: `kill $(lsof -ti :8000)`.
 
-- **`./.venv/bin/uvicorn` not found:** Run the backend setup commands above from the `backend` directory.
-- **`ModuleNotFoundError` in the backend:** Reinstall the backend with `./.venv/bin/python -m pip install -e '.[dev]'`.
-- **Port 8000 or 5173 is already in use:** Stop the process using the port, or start the service on another port. Keep `VITE_API_URL` aligned with the backend port.
-- **The frontend cannot reach the API:** Confirm the backend is running, then check the browser URL and `VITE_API_URL`.
-- **`npm: command not found`:** Install Node.js, then run `npm install` again in `frontend`.
+## Learning
 
-## Kill the terminal 
-kill $(lsof -ti :8080)
+*(Draft based on the commit history. To be rewritten in my own words.)*
 
-## CV-to-job matcher (backend/API only, no frontend UI yet)
+- **Working with many APIs at once.** Each job API returns a different shape (fields, pagination, location formats, auth). The `scripts/step_01_…`/`step_02_…` files and `test_greenhouse_api.py` show how I learned the Greenhouse API step by step before writing a scraper. The final design hides each source behind one scraper interface, so the rest of the app does not care where a job came from.
+- **Challenge: matching a CV to a job is more than keyword search.** The first prototype used placeholder jobs and simple matching. The matching logic was reworked into a score fused from eight weighted parts (skills, experience, seniority, semantic similarity, industry, language, education, location), with reasons and gaps for every result, so a user can see why a job ranks high.
+- **Challenge: personal data in Git.** The SQLite database with my own CV was committed by accident in the original repository. Adding it to `.gitignore` later did not remove it from history. When merging here, the file was removed from every commit. I learned to ignore data files from the first commit.
+- **Working in a team with Git.** Luca and I worked on separate branches and merged them, which led to merge conflicts and duplicate code that had to be cleaned up.
 
-This is a second, separate matching subsystem alongside the live-search flow described above. The
-live-search flow (`/api/searches`) queries external job APIs (Adzuna, Jooble, Bundesagentur,
-company boards) in real time. The CV-to-job matcher instead extracts a rich, provenance-tracked
-candidate profile from an uploaded CV and ranks it against a **curated jobs database** you load
-ahead of time — the two systems don't share data yet.
+## Limitations and assistance
 
-### How extraction works
+**Limitations**
 
-Every CV upload always runs a rule-based extractor (`backend/src/jobhunter/candidate/
-rules_extractor.py`) — regex/heuristics, no external calls, no API key needed. It's the default
-and fully functional on its own: contact info, work history with parsed dates/durations/
-achievements, education, skills (deduplicated, with recency/evidence-strength hints), languages,
-certifications, projects, and inferred seniority, each with a source snippet and confidence score.
+- The login is a demo: no accounts and no authentication. One database means one user, and the API has no authentication, so it must only run on `localhost` (the default).
+- Two matching systems exist side by side (live search and the curated job database matcher). They share a database but not all logic.
+- Scrapers depend on third-party APIs that can change or rate-limit without notice. The health monitor detects this, but fixes still need a human.
+- The health monitor's **Try fix** runs Python code proposed by the LLM inside the backend process, and **Apply fix** overwrites a scraper file. Only use these after reading the diff. They are meant for local development.
+- Scores are heuristics and were not validated against real hiring outcomes.
+- `technical-description.md` holds unfinished working notes.
 
-If `ANTHROPIC_API_KEY` is set in `.env`, an optional Claude-based extraction pass also runs
-(`candidate/llm_extractor.py`) and its fields take priority where present; on any failure (missing
-key, network error, malformed response) it silently falls back to the rules-only result — nothing
-in the app requires the LLM to work.
+**Assistance**
 
-### Set up
-
-```bash
-cd backend
-./.venv/bin/python -m pip install -e '.[dev]'      # add '.[dev,llm]' to also install the optional anthropic SDK
-```
-
-### Load the seed jobs
-
-```bash
-cd backend
-python scripts/load_jobs.py data/seed_jobs.json
-```
-
-This validates and loads the 31 seed postings in `backend/data/seed_jobs.json` (analytics, ML,
-marketing, software engineering, and business/ops roles) into the jobs database and rebuilds the
-TF-IDF corpus statistics used by the semantic-similarity layer. Re-run it any time you edit that
-file or add your own jobs JSON.
-
-### Upload a CV and run a match
-
-With the backend running (`./.venv/bin/uvicorn jobhunter.main:app --reload --port 8000`):
-
-```bash
-# 1. Upload a CV, get back the full structured profile (edit and PUT it back to correct
-#    extraction errors before matching)
-curl -F "cv_file=@resume.pdf" http://127.0.0.1:8000/api/candidates/upload-file
-
-# 2. Run matching against the jobs database
-curl -X POST http://127.0.0.1:8000/api/candidates/<profile_id>/match \
-  -H "Content-Type: application/json" \
-  -d '{"location": "Berlin", "remote_type": "remote", "min_score": 50, "top_k": 10}'
-
-# 3. Re-fetch a previous run
-curl http://127.0.0.1:8000/api/match-runs/<run_id>
-
-# Browse the jobs database directly
-curl "http://127.0.0.1:8000/api/jobs?industry=technology&employment_type=full_time"
-```
-
-Available match filters: `min_score`, `location`, `seniority`, `industry`, `remote_type`
-(`onsite`/`hybrid`/`remote`), `language`, `employment_type`.
-
-### How the matching weights work
-
-Each match run produces an `overall_fit` score (0-100) fused from 8 subscores — `skills`,
-`experience`, `seniority`, `semantic`, `industry`, `language`, `education`, `location` — each
-independently weighted. Defaults: skills 30, experience 10, seniority 10, semantic 20, industry
-10, language 10, education 5, location 5 (must sum to 100). Override any subset in the `/match`
-request body under `"weights"`, e.g. `{"weights": {"skills": 40, "experience": 5, "seniority": 5,
-"semantic": 15, "industry": 15, "language": 10, "education": 5, "location": 5}}`.
-
-For a CV with no work history, the engine automatically redistributes the `experience`/`seniority`
-weight into `education`/`semantic` and marks results `"confidence": "low"` — you don't need to set
-this manually.
-
-Each result also carries `match_reasons` (top positive contributors), `gap_reasons` (missing
-must-have skills, seniority mismatch direction, missing required language, etc.), and structured
-`evidence` pairing a candidate span with the job requirement it satisfies.
-
-### Env vars
-
-| Variable | Required | Purpose |
-|---|---|---|
-| `JOBHUNTER_DB_PATH` | no | SQLite file path (default `backend/data/jobhunter.sqlite3`, shared by both subsystems) |
-| `ANTHROPIC_API_KEY` | no | Enables the optional LLM extraction pass; omit to run rules-only |
-
-### Tests
-
-```bash
-cd backend
-./.venv/bin/python -m pytest
-```
-
-Covers normalization, the rule-based extractor (including 3 golden CV fixtures — an analytics
-intern, a career switcher, and a senior multilingual marketer — under `tests/fixtures/cvs/`), the
-LLM extractor (fully mocked, no network/API key needed), constraint/lexical/semantic/fusion
-scoring, and an end-to-end run against the real seed jobs database.
+- Built together with Luca Isaak.
+- AI: the first backend MVP (core flow, API tests, CV upload) was generated by the GitHub Copilot coding agent and then extended by us. Claude Code (Anthropic) was used during development (including the health monitor) and, for this repository, to merge the project with its history, remove the CV database from history, run the publication audit ([AUDIT.md](AUDIT.md)), escape job data in the frontend, add `.env.example` and write this README.
+- Libraries: FastAPI, Pydantic, Uvicorn, PyMuPDF, pytesseract, Pillow, NumPy, the Anthropic SDK, Vite.
+- Data: job postings belong to the sources listed under Data collection and the employers who posted them.
